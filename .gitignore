@@ -1,0 +1,7 @@
+# 実データ(PII)は絶対にこの公開リポジトリに含めない — 防御用
+app-data/
+shift-data-*.json
+*-data-*.json
+.DS_Store
+Thumbs.db
+desktop.ini
