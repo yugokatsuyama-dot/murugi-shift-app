@@ -245,8 +245,15 @@ body.edit-mode [data-cell="shift"]:hover{outline:2px dashed var(--brand);outline
   .appbar{padding:8px 10px;gap:7px}
   .appbar__brand h1{font-size:15px}
   .epop{left:0!important;right:0!important;bottom:0!important;top:auto!important;
-    width:100%!important;max-height:85vh;border-radius:14px 14px 0 0;display:flex;flex-direction:column}
+    width:100%!important;max-height:85vh;border-radius:14px 14px 0 0}
+  /* ↑ display は基底の .epop / .epop.show が制御（ここで display:flex を当てると×で閉じなくなる） */
   .epop__b{flex:1;overflow-y:auto}
+  .epop__h{padding:13px 14px}
+  .epop__h .x{font-size:26px;padding:0 10px}        /* ×を大きく＝閉じやすい */
+  .epop__f{flex-shrink:0;padding:11px 12px;gap:8px;position:sticky;bottom:0;background:var(--surface)}
+  .epop__f button{font-size:16px;padding:12px 16px}
+  .epop__f button.primary{flex:1}                    /* 確定を大きく目立たせる */
+  .epop__f #ep-empty{font-size:13px;padding:10px 8px}
   .sidebar{flex-direction:column}
   /* グリッドをモバイルで読めるように：横スクロール＋セル拡大 */
   .shift-view .weeks{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:6px}
@@ -862,8 +869,8 @@ function openEpop(iso,time,viewName,cellEl){
     showToast("助っ人「"+name+"」を追加（確定で保存）");
   };
   const gBtn=guestAddRow.querySelector("#ep-guest-add"), gInp=guestAddRow.querySelector("#ep-guest");
-  gBtn.addEventListener("click",()=>{addGuest(gInp.value);gInp.value="";});
-  gInp.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();addGuest(gInp.value);gInp.value="";}});
+  gBtn.addEventListener("click",()=>{addGuest(gInp.value);gInp.value="";gInp.blur();});  // blur=キーボードを閉じる→下部の確定ボタンが押せる
+  gInp.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();addGuest(gInp.value);gInp.value="";gInp.blur();}});
 
   const scrimNarrow=window.matchMedia("(max-width:680px)").matches;
   document.getElementById("scrim").classList.toggle("show",scrimNarrow);
