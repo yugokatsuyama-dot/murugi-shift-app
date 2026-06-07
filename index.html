@@ -574,7 +574,7 @@ function renderWeek(week,viewName){
         const raw=(a&&a[slot.time])||[];
         const op=isOperating(viewName,d.weekday,slot.time);
         if(viewName==="ekuriya"){
-          const ek=raw.filter(id=>STAFF_MAP[id]&&STAFF_MAP[id].org===ORG.EKURIYA&&!STAFF_MAP[id].mgmt);
+          const ek=raw.filter(id=>!STAFF_MAP[id]||(STAFF_MAP[id].org===ORG.EKURIYA&&!STAFF_MAP[id].mgmt));  // 名簿外(助っ人)は表示する
           if(op){c.appendChild(buildNames(distribute(ek,slot.positions,slot.capacity)[p],{}));}
           else if(ek.length){c.appendChild(buildNames(distribute(ek,slot.positions,slot.capacity)[p],{dispatchedIds:new Set(ek)}));}
           else{const e=document.createElement("span");e.className="empty";e.textContent="";c.appendChild(e);}
@@ -919,12 +919,12 @@ async function confirmEdit(){
     if(confirm(nm+" は本来この枠がNGです。\n「今日だけOK」として記録し赤表示を消しますか？\n（恒久NGは変わりません）"))ok=ngSel;
   }
   applyEditLocal(iso,time,sel,ok);
-  closeEpop();showToast(`${iso.slice(5)} ${time} を更新`);
-  if(LIVE.on&&LIVE.editor){
-    const saved=await postSlot(iso,time,sel,ok);
-    if(!saved)showToast("⚠️ 保存に失敗。通信を確認してください");
-    await fetchLive(LIVE.month,LIVE.viewerPass,LIVE.editorToken); // サーバーの最新で整合
-  }
+  closeEpop();
+  if(!(LIVE.on&&LIVE.editor)){ showToast(`${iso.slice(5)} ${time} を更新`); return; }
+  showToast("保存中…");
+  const saved=await postSlot(iso,time,sel,ok);
+  await fetchLive(LIVE.month,LIVE.viewerPass,LIVE.editorToken); // サーバーの最新で整合（保存成功なら反映が残る）
+  showToast(saved?`${iso.slice(5)} ${time} を保存しました ✓`:"⚠️ 保存できませんでした（編集トークンを確認してください）");
 }
 function emptySlot(){
   if(!EP_TARGET)return;
