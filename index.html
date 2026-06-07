@@ -113,6 +113,15 @@ button{font-family:inherit}
 .names span{white-space:nowrap}
 .names .sep{color:#9aa3ad;font-weight:400}
 .name--dispatched{color:var(--dispatched)}
+.name--guest{color:#7a5cc7;border-bottom:1.5px dotted #7a5cc7}
+.name--guest::before{content:"＋";font-size:9px;vertical-align:super}
+/* ライブ・パスコードゲート */
+.gate__live{display:flex;flex-direction:column;gap:8px;margin:6px 0 14px}
+.gate__live input{padding:11px 12px;border:1px solid var(--line,#ccc);border-radius:8px;font-size:15px}
+.gate__live button{padding:11px;border:none;border-radius:8px;background:var(--brand,#2a6df4);color:#fff;font-size:16px;font-weight:700;cursor:pointer}
+.gate__file{margin-top:8px}.gate__file summary{cursor:pointer;color:#6b7785;font-size:13px;margin-bottom:8px}
+.tag--guest{background:#efe7fb;color:#7a5cc7}
+.erow--add{display:flex;gap:8px;align-items:center;padding:6px 0}
 .empty{color:#c2c8cf;font-weight:400;font-size:10.5px}
 
 .sidebar{display:flex;flex-direction:column;gap:14px}
@@ -348,17 +357,24 @@ body.edit-mode [data-cell="shift"]:hover{outline:2px dashed var(--brand);outline
 
 <div class="gate" id="gate">
   <div class="gate__card">
-    <h2>シフトデータを読み込み</h2>
-    <p>このページは表示・編集だけを行う器（うつわ）です。<br>スタッフ名や勤務データは含まれていません。<br>お手元のシフトデータ（JSON）を読み込んでください。</p>
-    <div class="drop" id="drop">
-      <strong>📂 ここにJSONをドラッグ＆ドロップ</strong>
-      <span>またはクリックしてファイルを選択</span>
-      <input type="file" id="file-input" accept=".json,application/json" class="hidden">
+    <h2>シフト表を開く</h2>
+    <p>パスコードを入力すると<b>最新のシフト</b>が表示されます。<br>編集する人は編集トークンも入力してください。</p>
+    <div class="gate__live">
+      <input type="password" id="live-pass" placeholder="閲覧パスコード" autocomplete="off" inputmode="text">
+      <input type="password" id="live-token" placeholder="編集トークン（編集する人のみ・任意）" autocomplete="off">
+      <button id="live-enter">開く</button>
+      <div id="live-msg" style="font-size:13px;color:#c0392b;min-height:1em"></div>
     </div>
-    <div class="gate__alt">読み込んだデータはこの端末のブラウザにのみ保存され、次回から自動表示されます。<br>
-      <button id="use-sample">サンプルデータで操作を試す（架空の名前）</button>
-    </div>
-    <div class="gate__note">🔒 データはサーバーに送信されません。ブラウザ内（localStorage）だけに保存され、外部に出ません。共有PCでは利用後に「データ」→「この端末の記憶を消去」を実行してください。</div>
+    <details class="gate__file">
+      <summary>ファイルから開く（オフライン・上級者向け）</summary>
+      <div class="drop" id="drop">
+        <strong>📂 ここにJSONをドラッグ＆ドロップ</strong>
+        <span>またはクリックしてファイルを選択</span>
+        <input type="file" id="file-input" accept=".json,application/json" class="hidden">
+      </div>
+      <div class="gate__alt"><button id="use-sample">サンプルデータで操作を試す（架空の名前）</button></div>
+    </details>
+    <div class="gate__note">🔒 氏名・勤務データはこの器には含まれず、パスコード認証後にサーバー（社内Google）から取得します。共有PCでは利用後に「データ」→「この端末の記憶を消去」を実行してください。</div>
   </div>
 </div>
 
@@ -369,6 +385,10 @@ body.edit-mode [data-cell="shift"]:hover{outline:2px dashed var(--brand);outline
    ============================================================ */
 const ORG={MURUGI:"murugi",EKURIYA:"ekuriya"};
 const LS_KEY="murugi.shift.data.v1";
+const LS_LIVE="murugi.shift.live.v1";
+/* ⬇⬇ デプロイ後、GAS Web App の /exec URL をここに貼る（DEPLOY.md STEP7）⬇⬇ */
+const GAS_URL="https://script.google.com/macros/s/AKfycby8gdahHDf9MYcAjoLiP2ZpeQzWHzMNX8soKcOK-OkxHn6MuSfK46Is5oY4WlvAUrdT/exec";
+let LIVE={on:false,month:null,viewerPass:null,editorToken:null,editor:false};
 const SLOTS_ALL=["10:30","11:15","16:00","16:30","17:00"];
 
 /* 架空サンプル（公開ページで操作感を試すため。実在の人物ではない） */
@@ -478,6 +498,7 @@ function nameSpan(id,opts={}){
   const s=STAFF_MAP[id];
   const sp=document.createElement("span");
   sp.textContent=s?(s.display||s.first):id;
+  if(!s)sp.classList.add("name--guest");               // 名簿に無い＝助っ人
   if(opts.dispatched)sp.classList.add("name--dispatched");
   return sp;
 }
@@ -636,7 +657,9 @@ function computeViolations(){
     const [y,m,d]=iso.split("-").map(Number);
     const wd=new Date(y,m-1,d).getDay();
     SLOTS_ALL.forEach(time=>{
+      const ok=(ass.__ok&&ass.__ok[time])||[];   // (b) その日限りNG承認 → 赤抑制
       (ass[time]||[]).forEach(id=>{
+        if(ok.indexOf(id)>=0)return;             // 承認済みは違反にしない
         const s=STAFF_MAP[id];if(!s||!s.ng_rules)return;
         if(ngViolates(s.ng_rules,d,wd,time))VIOLATION_MAP.set(`${iso}|${time}|${id}`,s.ng_rules);
       });
@@ -806,6 +829,26 @@ function openEpop(iso,time,viewName,cellEl){
     });
   });
 
+  // 助っ人（名簿に無い人）の自由入力
+  const guestGrp=document.createElement("div");guestGrp.className="epop__grp";
+  guestGrp.innerHTML='<h4>助っ人（名簿にない人）</h4>';
+  const guestAddRow=document.createElement("div");guestAddRow.className="erow erow--add";
+  guestAddRow.innerHTML='<input type="text" id="ep-guest" placeholder="名前を入力" maxlength="12" style="flex:1;padding:6px 8px;border:1px solid #ccc;border-radius:6px"> <button type="button" id="ep-guest-add" class="ghost">追加</button>';
+  guestGrp.appendChild(guestAddRow);body.appendChild(guestGrp);
+  const addGuest=(name)=>{
+    name=(name||"").trim();
+    if(!name)return;
+    if(name.indexOf(",")>=0){alert("名前にカンマ(,)は使えません");return;}
+    if([...body.querySelectorAll(".erow input")].some(i=>i.value===name))return;
+    const row=document.createElement("div");row.className="erow sel";row.dataset.id=name;row.dataset.name=name;
+    row.innerHTML='<input type="checkbox" value="'+esc(name)+'" checked><label class="erow__name"><b>'+esc(name)+'</b><span class="erow__tags"><span class="tag tag--guest">助っ人</span></span></label>';
+    const cb=row.querySelector("input");
+    row.addEventListener("click",e=>{if(e.target.tagName!=="INPUT"){cb.checked=!cb.checked;}row.classList.toggle("sel",cb.checked);});
+    guestGrp.insertBefore(row,guestAddRow);
+  };
+  guestAddRow.querySelector("#ep-guest-add").addEventListener("click",()=>{const i=guestAddRow.querySelector("#ep-guest");addGuest(i.value);i.value="";i.focus();});
+  guestAddRow.querySelector("#ep-guest").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();addGuest(e.target.value);e.target.value="";}});
+
   const scrimNarrow=window.matchMedia("(max-width:680px)").matches;
   document.getElementById("scrim").classList.toggle("show",scrimNarrow);
   const pop=document.getElementById("epop");pop.classList.add("show");
@@ -831,16 +874,34 @@ function closeEpop(){
   document.getElementById("scrim").classList.remove("show");
   EP_TARGET=null;
 }
-function confirmEdit(){
+function applyEditLocal(iso,time,sel,ok){
+  snapshot();
+  if(!DATA.assignments[iso])DATA.assignments[iso]={};
+  DATA.assignments[iso][time]=sel;
+  if(ok&&ok.length){(DATA.assignments[iso].__ok=DATA.assignments[iso].__ok||{})[time]=ok;}
+  else if(DATA.assignments[iso].__ok){delete DATA.assignments[iso].__ok[time];}
+  persistCurrent();refreshAll();
+}
+async function confirmEdit(){
   if(!EP_TARGET)return;
   const {iso,time,cur}=EP_TARGET;
   const sel=[...document.querySelectorAll('#ep-body input:checked')].map(c=>c.value);
   if(JSON.stringify(sel)===JSON.stringify(cur)){closeEpop();return;}
-  snapshot();
-  if(!DATA.assignments[iso])DATA.assignments[iso]={};
-  DATA.assignments[iso][time]=sel;
-  closeEpop();persistCurrent();refreshAll();
-  showToast(`${iso.slice(5)} ${time} を更新`);
+  const [y,m,d]=iso.split("-").map(Number);const wd=new Date(y,m-1,d).getDay();
+  // (b) NGの人を入れた場合「今日だけOK」を確認（恒久NGは変えない）
+  let ok=[];
+  const ngSel=sel.filter(id=>{const s=STAFF_MAP[id];return s&&s.ng_rules&&ngViolates(s.ng_rules,d,wd,time);});
+  if(ngSel.length){
+    const nm=ngSel.map(id=>{const s=STAFF_MAP[id];return s?(s.display||s.first):id;}).join("・");
+    if(confirm(nm+" は本来この枠がNGです。\n「今日だけOK」として記録し赤表示を消しますか？\n（恒久NGは変わりません）"))ok=ngSel;
+  }
+  applyEditLocal(iso,time,sel,ok);
+  closeEpop();showToast(`${iso.slice(5)} ${time} を更新`);
+  if(LIVE.on&&LIVE.editor){
+    const saved=await postSlot(iso,time,sel,ok);
+    if(!saved)showToast("⚠️ 保存に失敗。通信を確認してください");
+    await fetchLive(LIVE.month,LIVE.viewerPass,LIVE.editorToken); // サーバーの最新で整合
+  }
 }
 function emptySlot(){
   if(!EP_TARGET)return;
@@ -888,6 +949,52 @@ function showToast(m){
   clearTimeout(showToast._t);showToast._t=setTimeout(()=>t.classList.remove("show"),2600);
 }
 
+/* ---------- ライブ（GAS+Sheet）---------- */
+function liveConfigured(){ return GAS_URL && GAS_URL.indexOf("__PASTE")<0; }
+async function fetchLive(month,pass,token){
+  if(!liveConfigured())return false;
+  try{
+    const u=new URL(GAS_URL);
+    u.searchParams.set("pass", token||pass);     // 読み取りは閲覧パスコード（編集トークンも可）
+    if(month&&month!=="active")u.searchParams.set("month",month);
+    const res=await fetch(u.toString(),{redirect:"follow"});
+    const body=await res.json();
+    if(!body.ok){ const mg=document.getElementById("live-msg"); if(mg)mg.textContent="パスコードが違います"; return false; }
+    LIVE.month=body.data.meta.year+"-"+String(body.data.meta.month).padStart(2,"0");
+    loadData(body.data,{persist:false});         // 既存ロジック流用（ファイルモードのLS_KEYは汚さない）
+    if(!LIVE.editor)lockEditingUI();
+    return true;
+  }catch(e){ const mg=document.getElementById("live-msg"); if(mg)mg.textContent="接続に失敗しました"; return false; }
+}
+function postSlot(iso,time,sel,ok){
+  if(!liveConfigured())return Promise.resolve(false);
+  return fetch(GAS_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},redirect:"follow",
+    body:JSON.stringify({token:LIVE.editorToken,month:LIVE.month,date:iso,slot:time,staff_ids:sel,ok_override:ok||[],by:"editor"})})
+    .then(r=>r.json()).then(b=>!!b.ok).catch(()=>false);
+}
+function lockEditingUI(){
+  const be=document.getElementById("btn-edit");
+  if(be){ be.style.display="none"; }
+  if(EDIT_MODE)toggleEditMode();
+}
+function startPolling(){
+  const tick=()=>{ if(LIVE.on&&document.visibilityState==="visible"&&!(EDIT_MODE&&EP_TARGET)) fetchLive(LIVE.month,LIVE.viewerPass,LIVE.editorToken); };
+  window.addEventListener("focus",tick);
+  document.addEventListener("visibilitychange",tick);
+  clearInterval(startPolling._i); startPolling._i=setInterval(tick,45000);
+}
+async function enterLive(pass,token){
+  const mg=document.getElementById("live-msg"); if(mg)mg.textContent="";
+  if(!liveConfigured()){ if(mg)mg.textContent="（未デプロイ）GAS_URL が未設定です。DEPLOY.md を参照"; return; }
+  LIVE.editor=!!(token&&token.trim());
+  const okp=await fetchLive("active",pass.trim(),token.trim());
+  if(okp){
+    LIVE.on=true; LIVE.viewerPass=pass.trim(); LIVE.editorToken=(token||"").trim();
+    try{ localStorage.setItem(LS_LIVE,JSON.stringify({pass:LIVE.viewerPass,token:LIVE.editorToken})); }catch(e){}
+    startPolling();
+  }else{ LIVE.editor=false; }
+}
+
 /* ---------- 初期化 ---------- */
 document.addEventListener("DOMContentLoaded",()=>{
   // データゲート
@@ -924,7 +1031,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   document.getElementById("dm-clear").addEventListener("click",()=>{
     dm.classList.add("hidden");
     if(confirm("この端末のブラウザに保存したシフトデータを消去します。よろしいですか？")){
-      try{localStorage.removeItem(LS_KEY);}catch(e){}
+      try{localStorage.removeItem(LS_KEY);localStorage.removeItem(LS_LIVE);}catch(e){}
       location.reload();
     }
   });
@@ -941,10 +1048,28 @@ document.addEventListener("DOMContentLoaded",()=>{
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"){e.preventDefault();undo();}
   });
 
-  // 起動: 記憶があれば復元、無ければゲート表示
-  if(!tryRestore()){
-    document.getElementById("gate").classList.remove("hidden");
-  }
+  // ライブ「開く」ボタン
+  document.getElementById("live-enter").addEventListener("click",()=>{
+    enterLive(document.getElementById("live-pass").value, document.getElementById("live-token").value);
+  });
+  document.getElementById("live-token").addEventListener("keydown",e=>{ if(e.key==="Enter")document.getElementById("live-enter").click(); });
+  document.getElementById("live-pass").addEventListener("keydown",e=>{ if(e.key==="Enter")document.getElementById("live-enter").click(); });
+
+  // 起動順: ① ライブ記憶 → ② ファイル記憶 → ③ ゲート表示
+  (async()=>{
+    let restored=false;
+    try{
+      const ls=JSON.parse(localStorage.getItem(LS_LIVE)||"null");
+      if(ls&&ls.pass&&liveConfigured()){
+        LIVE.editor=!!ls.token;
+        if(await fetchLive("active",ls.pass,ls.token||"")){
+          LIVE.on=true;LIVE.viewerPass=ls.pass;LIVE.editorToken=ls.token||"";startPolling();restored=true;
+        }
+      }
+    }catch(e){}
+    if(!restored&&tryRestore())restored=true;
+    if(!restored)document.getElementById("gate").classList.remove("hidden");
+  })();
 });
 </script>
 </body>
