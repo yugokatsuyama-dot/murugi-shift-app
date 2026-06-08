@@ -235,6 +235,25 @@ body.edit-mode [data-cell="shift"]:hover{outline:2px dashed var(--brand);outline
 .sched-card td.d{white-space:nowrap;width:60px;font-weight:700}
 .sched-card .empty{color:#999;padding:5px 0}
 
+/* ===== 閲覧専用モード（エクリヤスタッフ・スマホ最適化）=====
+   閲覧パスのみで開いた人に適用。編集者(LIVE.editor)には付かない。
+   不要情報（NG検知・スタッフ一覧・凡例・イベント・有ムル・各種ボタン）を隠し、
+   エクリヤのシフトだけを大きく見やすく出す。 */
+body.viewer-mode .sidebar{display:none!important}            /* NG検知/スタッフ一覧/記号/イベント を一括非表示 */
+body.viewer-mode #seg-view{display:none!important}           /* 両方/エクリヤ/有ムル切替 → エクリヤ固定なので不要 */
+body.viewer-mode #viol-chip{display:none!important}          /* 違反チップ */
+body.viewer-mode #btn-undo{display:none!important}           /* 元に戻す（編集用）*/
+body.viewer-mode #btn-print{display:none!important}          /* 印刷（閲覧者には不要）*/
+body.viewer-mode .menu{display:none!important}               /* データメニュー（編集/書出し用）*/
+body.viewer-mode .layout{display:block!important}            /* 3カラム→1カラム。エクリヤ表を全幅で */
+body.viewer-mode .shift-view__sub{display:none}             /* 「管理者非表示」等の内部向け補足を消す */
+body.viewer-mode .shift-view{padding:10px 12px}
+body.viewer-mode .shift-view__head{margin-bottom:10px}
+body.viewer-mode .shift-view__title{font-size:16px}
+body.viewer-mode .appbar{padding:10px 14px}
+body.viewer-mode .appbar__brand h1{font-size:16px}
+body.viewer-mode #btn-list{font-size:13px;padding:8px 14px}  /* 唯一残る切替ボタンを押しやすく */
+
 @media (max-width:1280px){
   .layout{grid-template-columns:1fr}
   .sidebar{flex-direction:row;flex-wrap:wrap}
@@ -255,6 +274,12 @@ body.edit-mode [data-cell="shift"]:hover{outline:2px dashed var(--brand);outline
   .epop__f button.primary{flex:1}                    /* 確定を大きく目立たせる */
   .epop__f #ep-empty{font-size:13px;padding:10px 8px}
   .sidebar{flex-direction:column}
+  .sched-grid{column-count:1}          /* 個人別はスマホでは1段組み（潰れ防止）*/
+  /* 閲覧モード：エクリヤ単独なので横幅に余裕→セルをさらに大きく */
+  body.viewer-mode .week__cell{font-size:14px;min-height:34px}
+  body.viewer-mode .names{font-size:14px}
+  body.viewer-mode .sched-card h3{font-size:16px}
+  body.viewer-mode .sched-card table{font-size:14px}
   /* グリッドをモバイルで読めるように：横スクロール＋セル拡大 */
   .shift-view .weeks{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:6px}
   .week{min-width:620px}
@@ -755,7 +780,7 @@ function toggleListView(){
   LIST_MODE=!LIST_MODE;
   document.body.classList.toggle("list-mode",LIST_MODE);
   const b=document.getElementById("btn-list");
-  b.textContent=LIST_MODE?"📋 グリッドに戻す":"📋 個人別";b.classList.toggle("on",LIST_MODE);
+  b.textContent=LIST_MODE?"📋 シフトに戻す":"📋 個人別";b.classList.toggle("on",LIST_MODE);
   applyListVis();if(LIST_MODE)renderStaffSchedule();
 }
 function renderStaffSchedule(){
@@ -999,6 +1024,9 @@ function lockEditingUI(){
   const be=document.getElementById("btn-edit");
   if(be){ be.style.display="none"; }
   if(EDIT_MODE)toggleEditMode();
+  // 閲覧専用UI：サイドバー等を隠し、エクリヤ単独ビューに固定（スタッフ向け）
+  document.body.classList.add("viewer-mode");
+  if(CURRENT_VIEW_MODE!=="ekuriya"){ setView("ekuriya"); if(LIST_MODE)renderStaffSchedule(); }
 }
 function startPolling(){
   const tick=()=>{ if(LIVE.on&&document.visibilityState==="visible"&&!(EDIT_MODE&&EP_TARGET)) fetchLive(LIVE.month,LIVE.viewerPass,LIVE.editorToken); };
