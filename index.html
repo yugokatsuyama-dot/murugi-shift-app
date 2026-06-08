@@ -254,6 +254,37 @@ body.viewer-mode .appbar{padding:10px 14px}
 body.viewer-mode .appbar__brand h1{font-size:16px}
 body.viewer-mode #btn-list{font-size:13px;padding:8px 14px}  /* 唯一残る切替ボタンを押しやすく */
 
+/* ===== 案B：日別カード（閲覧モードのメイン表示） =====
+   閲覧者にだけ表示。編集者・非ライブには出さない（JSで display 制御＋下の保険ルール）。 */
+body:not(.viewer-mode) #view-daycards{display:none!important}
+.daycards{display:flex;flex-direction:column;gap:11px;max-width:520px;margin:0 auto}
+.dcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--sh);overflow:hidden;scroll-margin-top:64px}
+.dcard.today{border-color:var(--warn);box-shadow:0 0 0 2px rgba(217,107,20,.25)}
+.dcard__h{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.dcard.is-slim .dcard__h{border-bottom:none}
+.dcard__d{font-size:21px;font-weight:800;line-height:1}
+.dcard.today .dcard__d{color:var(--warn)}
+.dcard__wd{font-size:12.5px;font-weight:800;padding:2px 9px;border-radius:999px;background:#eef1f4;color:var(--muted)}
+.dcard__wd.sat{background:#e7eefb;color:var(--sat)}
+.dcard__wd.sun{background:#fbe3e4;color:var(--sun)}
+.dcard__today{margin-left:auto;font-size:11px;font-weight:800;color:var(--warn);background:#fff3e6;padding:3px 10px;border-radius:999px}
+.dcard__closed{padding:9px 14px;text-align:center;color:var(--closed-text);font-weight:800;background:var(--closed-bg)}
+.dcard__none{padding:7px 14px;text-align:center;color:#c2c8cf;font-weight:700}
+.dcard__b{padding:5px 12px 10px}
+.dslot{display:flex;align-items:flex-start;gap:10px;padding:8px 2px;border-bottom:1px dashed var(--line)}
+.dslot:last-child{border-bottom:none}
+.dslot__t{flex:none;width:106px;font-size:12px;font-weight:800;border-radius:8px;padding:6px 8px;text-align:center;line-height:1.2}
+.dslot__t .tt{font-size:13px;font-variant-numeric:tabular-nums;display:block}
+.dslot__t.lunch{background:var(--lunch2);color:#8a4d05}
+.dslot__t.dinner{background:var(--dinner2);color:#1b4894}
+.dslot__n{display:flex;flex-wrap:wrap;gap:6px;padding-top:1px}
+.dchip{font-size:15px;font-weight:700;background:#eef1f4;border-radius:8px;padding:5px 11px;white-space:nowrap}
+.dchip.lunch{background:#fde8cf}
+.dchip.dinner{background:#dbe9fa}
+.dchip.guest{background:#efe7fb;color:var(--mgmt)}
+.dchip.guest::before{content:"＋";font-size:10px;vertical-align:2px}
+.dchip.disp{outline:1.5px solid var(--dispatched);color:var(--dispatched)}
+
 @media (max-width:1280px){
   .layout{grid-template-columns:1fr}
   .sidebar{flex-direction:row;flex-wrap:wrap}
@@ -365,6 +396,7 @@ body.viewer-mode #btn-list{font-size:13px;padding:8px 14px}  /* 唯一残る切�
       </div>
       <div class="sched-grid" id="staff-schedule-body"></div>
     </section>
+    <section id="view-daycards" style="display:none"><div class="daycards" id="daycards-body"></div></section>
     <aside class="sidebar">
       <div class="card box"><h3>NG違反検知</h3><div id="violations"></div></div>
       <div class="card box"><h3>スタッフ一覧</h3><div class="staff-list" id="staff-list"></div></div>
@@ -648,6 +680,7 @@ function renderEvents(){
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 
 function applyViewLayout(){
+  if(document.body.classList.contains("viewer-mode")){applyViewerDisplay();return;}  // 閲覧者は日別カード主軸
   const ek=document.getElementById("view-ekuriya"),mu=document.getElementById("view-murugi");
   const layout=document.querySelector(".layout");
   if(CURRENT_VIEW_MODE==="both"){ek.style.display="";mu.style.display="";layout.style.gridTemplateColumns="1fr 1fr 232px";}
@@ -740,7 +773,7 @@ function highlightViolations(){
 function runValidator(){computeViolations();renderViolations();highlightViolations();}
 
 /* ---------- 編集 ---------- */
-function refreshAll(){renderViews();attachCellClicks();runValidator();}
+function refreshAll(){renderViews();attachCellClicks();runValidator();if(document.body.classList.contains("viewer-mode"))applyViewerDisplay();}
 function snapshot(){
   UNDO.push(JSON.stringify(DATA.assignments));
   if(UNDO.length>40)UNDO.shift();
@@ -771,6 +804,7 @@ function toggleEditMode(){
 const SCHED_LABEL={"10:30":"10:30〜(ランチ通し)","11:15":"11:15〜(ランチ)","16:30":"16:30〜(ディナー早番)","17:00":"17:00〜(ディナー)"};
 const SCHED_WD=["日","月","火","水","木","金","土"];
 function applyListVis(){
+  if(document.body.classList.contains("viewer-mode")){applyViewerDisplay();return;}  // 閲覧者は日別カード ⇄ 個人別
   const ek=document.getElementById("view-ekuriya"),mu=document.getElementById("view-murugi"),sl=document.getElementById("view-staff-schedule");
   const layout=document.querySelector(".layout");
   if(LIST_MODE){ek.style.display="none";mu.style.display="none";sl.style.display="block";layout.style.gridTemplateColumns="1fr 232px";}
@@ -808,6 +842,64 @@ function renderStaffSchedule(){
     host.appendChild(card);
   });
   if(!targets.length)host.innerHTML='<div class="empty">対象スタッフがいません</div>';
+}
+
+/* ---------- 案B：日別カード（閲覧モード専用表示） ---------- */
+const DC_KIND={"10:30":"仕込","11:15":"ランチ","16:30":"早番","17:00":"ディナー"};
+function dcKind(block){return (block&&block.indexOf("lunch")>=0)?"lunch":"dinner";}
+function dcTodayIso(y,m){
+  const now=new Date();
+  if(now.getFullYear()===y&&(now.getMonth()+1)===m)
+    return `${y}-${String(m).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
+  return null;
+}
+function renderDayCards(){
+  const host=document.getElementById("daycards-body");if(!host||!DATA)return;
+  host.innerHTML="";
+  const y=DATA.meta.year,m=DATA.meta.month;
+  const slots=DATA.viewSlots.ekuriya||[];
+  const last=new Date(y,m,0).getDate();
+  const WK=["日","月","火","水","木","金","土"];
+  const todayIso=dcTodayIso(y,m);
+  for(let d=1;d<=last;d++){
+    const iso=`${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const wd=new Date(y,m-1,d).getDay();
+    const a=DATA.assignments[iso];
+    const card=document.createElement("div");card.className="dcard";
+    const isToday=iso===todayIso;if(isToday){card.classList.add("today");card.dataset.today="1";}
+    const wdCls=wd===6?"sat":wd===0?"sun":"";
+    const head=`<div class="dcard__h"><span class="dcard__d">${d}</span><span class="dcard__wd ${wdCls}">${WK[wd]}</span>${isToday?'<span class="dcard__today">今日</span>':""}</div>`;
+    if(a&&a.closed){card.classList.add("is-slim");card.innerHTML=head+'<div class="dcard__closed">定休日</div>';host.appendChild(card);continue;}
+    let rows="";
+    slots.forEach(sl=>{
+      const raw=(a&&a[sl.time])||[];
+      const names=raw.filter(id=>!STAFF_MAP[id]||(STAFF_MAP[id].org===ORG.EKURIYA&&!STAFF_MAP[id].mgmt));  // 名簿外(助っ人)も表示
+      if(!names.length)return;
+      const kind=dcKind(sl.block);
+      const chips=names.map(id=>{
+        const s=STAFF_MAP[id];const nm=s?(s.display||s.first):id;
+        const cls=[kind];if(!s)cls.push("guest");   // 閲覧者には派遣マーカーは出さず統一（助っ人の＋のみ）
+        return `<span class="dchip ${cls.join(" ")}">${esc(nm)}</span>`;
+      }).join("");
+      rows+=`<div class="dslot"><span class="dslot__t ${kind}"><span class="tt">${sl.time}</span>${DC_KIND[sl.time]||""}</span><div class="dslot__n">${chips}</div></div>`;
+    });
+    if(!rows){card.classList.add("is-slim");card.innerHTML=head+'<div class="dcard__none">—</div>';}
+    else card.innerHTML=head+`<div class="dcard__b">${rows}</div>`;
+    host.appendChild(card);
+  }
+  if(!renderDayCards._scrolled){
+    const t=host.querySelector('[data-today="1"]');
+    if(t){renderDayCards._scrolled=true;setTimeout(()=>{try{t.scrollIntoView({block:"start"});}catch(e){}},60);}
+  }
+}
+/* 閲覧モードの表示切替：日別カード ⇄ 個人別（グリッド/有ムル/サイドバーは出さない） */
+function applyViewerDisplay(){
+  const dc=document.getElementById("view-daycards");
+  const sl=document.getElementById("view-staff-schedule");
+  const ek=document.getElementById("view-ekuriya"),mu=document.getElementById("view-murugi");
+  if(ek)ek.style.display="none";if(mu)mu.style.display="none";
+  if(LIST_MODE){if(dc)dc.style.display="none";if(sl)sl.style.display="block";renderStaffSchedule();}
+  else{if(sl)sl.style.display="none";if(dc)dc.style.display="block";renderDayCards();}
 }
 
 /* ---------- セルクリック → 編集ポップアップ ---------- */
