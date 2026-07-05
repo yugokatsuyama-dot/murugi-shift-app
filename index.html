@@ -274,13 +274,15 @@ body.viewer-mode .week__cell--date{background:transparent;font-size:13px;font-we
   border-bottom:1.5px solid #d7dce2;padding-bottom:3px}
 body.viewer-mode .week__cell--time{background:transparent;color:#9aa3ad;font-size:9.5px;font-weight:800}
 body.viewer-mode .week__cell--time-cont{font-size:0}                   /* 連続行の時間は隠して1スロット=1表記に */
-body.viewer-mode .week__cell--lunch1,body.viewer-mode .week__cell--lunch2{background:#fff6ec}
-body.viewer-mode .week__cell--dinner-mid,body.viewer-mode .week__cell--dinner2{background:#eef4fb}
+body.viewer-mode .week__cell--lunch1{background:#ffeeda}     /* 10:30 は少し濃く */
+body.viewer-mode .week__cell--lunch2{background:#fff6ec}
+body.viewer-mode .week__cell--dinner-mid{background:#e4eef9} /* 16:30 は少し濃く */
+body.viewer-mode .week__cell--dinner2{background:#eef4fb}
 body.viewer-mode .week__cell--time.week__cell--lunch1,
 body.viewer-mode .week__cell--time.week__cell--lunch2{color:#d9760f}
 body.viewer-mode .week__cell--time.week__cell--dinner-mid,
 body.viewer-mode .week__cell--time.week__cell--dinner2{color:#2f6fdb}
-body.viewer-mode .names{font-size:12.5px;font-weight:700;gap:0 3px}
+body.viewer-mode .names{font-size:14px;font-weight:700;gap:0 4px}   /* 名前を大きく */
 body.viewer-mode .names span{color:#26303b}
 body.viewer-mode .name--dispatched{color:#26303b}                     /* 派遣の緑も統一（ノイズ排除） */
 body.viewer-mode .name--guest{color:var(--mgmt)}                      /* 助っ人のみ色＋＋印（既存） */
@@ -325,6 +327,12 @@ body.viewer-mode .week__cell--today-col.week__row--last{box-shadow:inset 1.6px 0
   .week__cell--time,.week__cell--header,.week__cell--date{font-size:12px}
   .week__cell--mgmt-mark,.week__cell--closed{font-size:12px}
   .names{font-size:13px;gap:1px 5px}
+  /* 閲覧はスマホでも横スクロールせず幅に収める（1か月フルを一望） */
+  body.viewer-mode .shift-view .weeks{overflow-x:visible;padding-bottom:0}
+  body.viewer-mode .week{min-width:0}
+  body.viewer-mode .week__cell{font-size:11px;min-height:0;padding:3.5px 1px}
+  body.viewer-mode .week__cell--date{font-size:12px}
+  body.viewer-mode .names{font-size:12.5px;gap:0 2px}
   .shift-view__title{font-size:14px}
   .layout{gap:10px}
 }
