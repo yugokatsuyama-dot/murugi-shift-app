@@ -1214,18 +1214,48 @@ document.addEventListener("DOMContentLoaded",()=>{
   document.getElementById("live-token").addEventListener("keydown",e=>{ if(e.key==="Enter")document.getElementById("live-enter").click(); });
   document.getElementById("live-pass").addEventListener("keydown",e=>{ if(e.key==="Enter")document.getElementById("live-enter").click(); });
 
-  // 起動順: ① ライブ記憶 → ② ファイル記憶 → ③ ゲート表示
+  // ── LIFF管理者導線: #k=<閲覧パス>&t=<編集トークン>&m=<YYYY-MM> で自動ログイン ──
+  // LIFFで管理者認証済みのため、パスコード手入力なしで開ける（既存ゲートは併存）。
+  let FRAG=null;
+  try{
+    if(location.hash.length>1){
+      const hp=new URLSearchParams(location.hash.slice(1));
+      if(hp.get("k")) FRAG={pass:hp.get("k"),token:hp.get("t")||"",month:(hp.get("m")||"").match(/^\d{4}-\d{2}$/)?hp.get("m"):""};
+    }
+  }catch(e){}
+  if(FRAG) history.replaceState(null,"",location.pathname+location.search);  // 資格情報をURL/履歴から即消去
+
+  // 起動順: ⓪ フラグメント → ① ライブ記憶 → ② ファイル記憶 → ③ ゲート表示
   (async()=>{
     let restored=false;
-    try{
-      const ls=JSON.parse(localStorage.getItem(LS_LIVE)||"null");
-      if(ls&&ls.pass&&liveConfigured()){
-        LIVE.editor=!!ls.token;
-        if(await fetchLive("active",ls.pass,ls.token||"")){
-          LIVE.on=true;LIVE.viewerPass=ls.pass;LIVE.editorToken=ls.token||"";LIVE.liveMonth=LIVE.month;document.getElementById("btn-prev-month").style.display="";startPolling();restored=true;
+    // ⓪ フラグメント自動ログイン
+    if(FRAG&&liveConfigured()){
+      await enterLive(FRAG.pass,FRAG.token);   // 成功時: LIVE設定+LS保存+startPolling
+      if(LIVE.on){
+        restored=true;
+        if(FRAG.month&&FRAG.month!==LIVE.liveMonth){
+          showToast(FRAG.month.split("-")[1].replace(/^0/,"")+"月を読み込み中…");
+          if(await fetchMonthView(FRAG.month)){
+            LIVE.viewingPrev=true;   // 45秒ポーリングによる今月への戻りを抑止
+            document.getElementById("btn-prev-month").style.display="none";
+            document.getElementById("btn-next-month").style.display="";
+          }else{ showToast("指定月を取得できませんでした（今月を表示）"); }
         }
       }
-    }catch(e){}
+    }
+    // ① ライブ記憶
+    if(!restored){
+      try{
+        const ls=JSON.parse(localStorage.getItem(LS_LIVE)||"null");
+        if(ls&&ls.pass&&liveConfigured()){
+          LIVE.editor=!!ls.token;
+          if(await fetchLive("active",ls.pass,ls.token||"")){
+            LIVE.on=true;LIVE.viewerPass=ls.pass;LIVE.editorToken=ls.token||"";LIVE.liveMonth=LIVE.month;document.getElementById("btn-prev-month").style.display="";startPolling();restored=true;
+          }
+        }
+      }catch(e){}
+    }
+    // ② ファイル記憶 → ③ ゲート表示
     if(!restored&&tryRestore())restored=true;
     if(!restored)document.getElementById("gate").classList.remove("hidden");
   })();
