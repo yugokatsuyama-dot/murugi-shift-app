@@ -34,10 +34,10 @@ button{font-family:inherit}
 }
 .appbar__brand{display:flex;align-items:center;gap:8px;margin-right:auto}
 .month-nav{display:flex;align-items:center;gap:4px}
-.btn--sm{font-size:11px;padding:2px 7px;min-width:0;height:24px;line-height:1}
-.month-nav .mon{font-size:13px;color:var(--muted);font-weight:600;min-width:80px;text-align:center}
+.btn--sm{font-size:11px;padding:2px 7px;min-width:0;height:24px;line-height:1;white-space:nowrap}
+.month-nav .mon{font-size:13px;color:var(--muted);font-weight:600;min-width:80px;text-align:center;white-space:nowrap}
 .badge--prev{display:inline-block;font-size:10px;background:#f0c040;color:#333;border-radius:4px;padding:1px 5px;margin-left:4px;vertical-align:middle}
-.appbar__brand h1{margin:0;font-size:17px;letter-spacing:.03em}
+.appbar__brand h1{margin:0;font-size:17px;letter-spacing:.03em;white-space:nowrap}
 .appbar__brand .mon{font-size:13px;color:var(--muted);font-weight:600}
 .seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:var(--r-sm);overflow:hidden}
 .seg button{border:0;background:var(--surface);padding:6px 11px;font-size:12px;cursor:pointer;color:var(--text)}
@@ -46,7 +46,7 @@ button{font-family:inherit}
 .btn{
   border:1px solid var(--line-strong);background:var(--surface);color:var(--text);
   padding:6px 12px;font-size:12px;border-radius:var(--r-sm);cursor:pointer;
-  display:inline-flex;align-items:center;gap:6px;
+  display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
 }
 .btn:hover{background:var(--surface-2)}
 .btn.on{background:var(--warn);border-color:var(--warn);color:#fff}
@@ -492,6 +492,16 @@ const GAS_URL="https://script.google.com/macros/s/AKfycby8gdahHDf9MYcAjoLiP2ZpeQ
 const WORKER_URL="https://murugi-shift-bot.yugo-katsuyama.workers.dev";   // 公開ボタン・公開状態照会（LIFF Worker）
 /* JST（UTC+9固定・端末タイムゾーン非依存）の現在月 "YYYY-MM" */
 function jstNowYM(){const d=new Date(Date.now()+9*3600*1000);return d.getUTCFullYear()+"-"+String(d.getUTCMonth()+1).padStart(2,"0");}
+/* 編集モードのスマホでは、ビューポート幅をカレンダー幅(680)に合わせて全体をフィット表示にする
+   （ヘッダーもカレンダー幅まで広がり、初期ズームで月全体が見える）。閲覧モード/PCは端末幅のまま。 */
+function applyEditorViewport(){
+  try{
+    const meta=document.querySelector('meta[name=viewport]'); if(!meta)return;
+    const shortSide=(window.screen&&Math.min(window.screen.width,window.screen.height))||window.innerWidth||9999;
+    const phone=shortSide<520;   // スマホ実機（縦横どちらでも短辺<520）
+    meta.setAttribute("content", (LIVE.editor&&phone) ? "width=680" : "width=device-width, initial-scale=1");
+  }catch(e){}
+}
 let LIVE={on:false,month:null,liveMonth:null,viewingMonth:null,viewerPass:null,editorToken:null,editor:false,viewingPrev:false};
 
 /* 公開状態バッジ: 未公開の翌月 or 「公開後に編集した月」(DIRTY) に警告表示。DIRTYは公開で解除・localStorage永続 */
@@ -1184,6 +1194,7 @@ async function enterLive(pass,token){
     document.getElementById("btn-prev-month").style.display="";
     document.getElementById("btn-fwd-month").style.display="";
     if(LIVE.editor)document.getElementById("btn-publish").style.display="";
+    applyEditorViewport();
     startPolling();updatePubBadge();
   }else{ LIVE.editor=false; }
 }
@@ -1369,7 +1380,7 @@ document.addEventListener("DOMContentLoaded",()=>{
         if(ls&&ls.pass&&liveConfigured()){
           LIVE.editor=!!ls.token;
           if(await fetchLive(jstNowYM(),ls.pass,ls.token||"")){
-            LIVE.on=true;LIVE.viewerPass=ls.pass;LIVE.editorToken=ls.token||"";LIVE.liveMonth=LIVE.month;document.getElementById("btn-prev-month").style.display="";document.getElementById("btn-fwd-month").style.display="";if(LIVE.editor)document.getElementById("btn-publish").style.display="";startPolling();updatePubBadge();restored=true;
+            LIVE.on=true;LIVE.viewerPass=ls.pass;LIVE.editorToken=ls.token||"";LIVE.liveMonth=LIVE.month;document.getElementById("btn-prev-month").style.display="";document.getElementById("btn-fwd-month").style.display="";if(LIVE.editor)document.getElementById("btn-publish").style.display="";applyEditorViewport();startPolling();updatePubBadge();restored=true;
           }
         }
       }catch(e){}
