@@ -245,7 +245,7 @@ body.edit-mode [data-cell="shift"]:hover{outline:2px dashed var(--brand);outline
    エクリヤのシフトだけを大きく見やすく出す。 */
 body.viewer-mode .sidebar{display:none!important}            /* NG検知/スタッフ一覧/記号/イベント を一括非表示 */
 body.viewer-mode #seg-view{display:none!important}           /* 両方/エクリヤ/有ムル切替 → エクリヤ固定なので不要 */
-body.viewer-mode #btn-fwd-month{display:none!important}      /* 翌月（作成中ドラフト）は編集者のみ */
+body.viewer-mode #btn-prev-month{display:none!important}     /* スタッフ閲覧は当月と翌月のみ（前月は出さない） */
 body.viewer-mode #viol-chip{display:none!important}          /* 違反チップ */
 body.viewer-mode #btn-undo{display:none!important}           /* 元に戻す（編集用）*/
 body.viewer-mode #btn-print{display:none!important}          /* 印刷（閲覧者には不要）*/
@@ -1211,52 +1211,46 @@ document.addEventListener("DOMContentLoaded",()=>{
     enterLive(document.getElementById("live-pass").value, document.getElementById("live-token").value);
   });
 
-  // 前月ナビ
-  document.getElementById("btn-prev-month").addEventListener("click", async ()=>{
-    if(!LIVE.liveMonth) return;
-    const [y,m]=LIVE.liveMonth.split("-").map(Number);
-    const pm=m===1?`${y-1}-12`:`${y}-${String(m-1).padStart(2,"0")}`;
-    showToast("前月を読み込み中…");
-    const wasPrev=LIVE.viewingPrev; LIVE.viewingPrev=true;   // フェッチ中にポーリング(focus tick)が今月で上書きする競合を防止
-    const ok=await fetchMonthView(pm);
-    if(ok){
-      document.getElementById("btn-prev-month").style.display="none";
-      document.getElementById("btn-fwd-month").style.display="none";
-      document.getElementById("btn-next-month").style.display="";
-      showToast("前月を表示中");
-    } else { LIVE.viewingPrev=wasPrev; showToast("前月データを取得できませんでした"); }
-  });
-
-  // 翌月ナビ（編集者用。ドラフト作成中の翌月を開く）
-  document.getElementById("btn-fwd-month").addEventListener("click", async ()=>{
-    if(!LIVE.liveMonth) return;
-    const [y,m]=LIVE.liveMonth.split("-").map(Number);
-    const nm=m===12?`${y+1}-01`:`${y}-${String(m+1).padStart(2,"0")}`;
-    showToast("翌月を読み込み中…");
-    const wasPrev=LIVE.viewingPrev; LIVE.viewingPrev=true;   // フェッチ中のポーリング上書きも防止（前月と同じ仕組み）
-    const ok=await fetchMonthView(nm);
-    if(ok){
-      document.getElementById("btn-prev-month").style.display="none";
-      document.getElementById("btn-fwd-month").style.display="none";
-      document.getElementById("btn-next-month").style.display="";
-      showToast("翌月を表示中（編集はこの月に保存されます）");
-    } else { LIVE.viewingPrev=wasPrev; showToast("翌月データを取得できませんでした"); }
-  });
-
-  // 今月に戻る
-  document.getElementById("btn-next-month").addEventListener("click", async ()=>{
-    if(!LIVE.liveMonth) return;
-    showToast("今月に戻ります…");
-    const ok=await fetchLive(LIVE.liveMonth, LIVE.viewerPass, LIVE.editorToken);
-    if(ok){
-      LIVE.viewingPrev=false;
-      LIVE.viewingMonth=null;
-      document.getElementById("btn-next-month").style.display="none";
-      document.getElementById("btn-prev-month").style.display="";
-      document.getElementById("btn-fwd-month").style.display="";
-      showToast("今月のシフトを表示中");
+  // 月ナビ（ページャー）: 編集者=何ヶ月でも前後に移動可 / 閲覧専用=当月と翌月のみ（前月ボタンはCSSで非表示）
+  function navYmAdd(ym,n){const[y,m]=String(ym).split("-").map(Number);const t=y*12+(m-1)+n;return `${Math.floor(t/12)}-${String((t%12)+1).padStart(2,"0")}`;}
+  function navViewYm(){return LIVE.viewingMonth||LIVE.liveMonth;}
+  function navButtons(){
+    const viewingCurrent=!LIVE.viewingMonth||LIVE.viewingMonth===LIVE.liveMonth;
+    document.getElementById("btn-next-month").style.display=viewingCurrent?"none":"";
+    document.getElementById("btn-prev-month").style.display="";
+    // 閲覧専用の「翌月」は当月表示中だけ（当月→翌月の1段のみ。編集者は常時）
+    document.getElementById("btn-fwd-month").style.display=(LIVE.editor||viewingCurrent)?"":"none";
+  }
+  async function navToMonth(target){
+    if(!LIVE.liveMonth||!LIVE.on)return;
+    const label=Number(target.split("-")[1])+"月";
+    showToast(label+"を読み込み中…");
+    const wasPrev=LIVE.viewingPrev,wasView=LIVE.viewingMonth;
+    LIVE.viewingPrev=true;   // フェッチ中にポーリング(focus tick)が今月で上書きする競合を防止
+    let ok;
+    if(target===LIVE.liveMonth){
+      ok=await fetchLive(LIVE.liveMonth,LIVE.viewerPass,LIVE.editorToken);
+      if(ok){LIVE.viewingPrev=false;LIVE.viewingMonth=null;showToast("今月のシフトを表示中");}
+    }else{
+      ok=await fetchMonthView(target);
+      if(ok&&!LIVE.editor&&Object.keys(DATA.assignments||{}).length===0){
+        // 閲覧専用には未作成の月を見せない（今月へ戻す）
+        showToast(label+"のシフトはまだ準備中です");
+        await fetchLive(LIVE.liveMonth,LIVE.viewerPass,LIVE.editorToken);
+        LIVE.viewingPrev=false;LIVE.viewingMonth=null;
+      }else if(ok){
+        showToast(label+"を表示中"+(LIVE.editor?"（編集はこの月に保存されます）":""));
+      }
     }
+    if(!ok){LIVE.viewingPrev=wasPrev;LIVE.viewingMonth=wasView;showToast("データを取得できませんでした");}
+    navButtons();
+  }
+  document.getElementById("btn-prev-month").addEventListener("click",()=>navToMonth(navYmAdd(navViewYm(),-1)));
+  document.getElementById("btn-fwd-month").addEventListener("click",()=>{
+    if(!LIVE.editor&&navViewYm()!==LIVE.liveMonth)return;   // 閲覧専用は当月→翌月のみ
+    navToMonth(navYmAdd(navViewYm(),1));
   });
+  document.getElementById("btn-next-month").addEventListener("click",()=>navToMonth(LIVE.liveMonth));
   document.getElementById("live-token").addEventListener("keydown",e=>{ if(e.key==="Enter")document.getElementById("live-enter").click(); });
   document.getElementById("live-pass").addEventListener("keydown",e=>{ if(e.key==="Enter")document.getElementById("live-enter").click(); });
 
@@ -1288,11 +1282,8 @@ document.addEventListener("DOMContentLoaded",()=>{
         if(FRAG.month&&FRAG.month!==LIVE.liveMonth){
           showToast(FRAG.month.split("-")[1].replace(/^0/,"")+"月を読み込み中…");
           LIVE.viewingPrev=true;   // フェッチ中〜表示中のポーリング上書きを抑止
-          if(await fetchMonthView(FRAG.month)){
-            document.getElementById("btn-prev-month").style.display="none";
-            document.getElementById("btn-fwd-month").style.display="none";
-            document.getElementById("btn-next-month").style.display="";
-          }else{ LIVE.viewingPrev=false; showToast("指定月を取得できませんでした（今月を表示）"); }
+          if(!await fetchMonthView(FRAG.month)){ LIVE.viewingPrev=false; showToast("指定月を取得できませんでした（今月を表示）"); }
+          navButtons();
         }
       }
     }
