@@ -246,6 +246,8 @@ body.edit-mode [data-cell="shift"]:hover{outline:2px dashed var(--brand);outline
 body.viewer-mode .sidebar{display:none!important}            /* NG検知/スタッフ一覧/記号/イベント を一括非表示 */
 body.viewer-mode #seg-view{display:none!important}           /* 両方/エクリヤ/有ムル切替 → エクリヤ固定なので不要 */
 body.viewer-mode #btn-prev-month{display:none!important}     /* スタッフ閲覧は当月と翌月のみ（前月は出さない） */
+body.viewer-mode #btn-publish{display:none!important}        /* 公開は編集者のみ */
+body.viewer-mode #pub-badge{display:none!important}
 body.viewer-mode #viol-chip{display:none!important}          /* 違反チップ */
 body.viewer-mode #btn-undo{display:none!important}           /* 元に戻す（編集用）*/
 body.viewer-mode #btn-print{display:none!important}          /* 印刷（閲覧者には不要）*/
@@ -370,6 +372,7 @@ body.viewer-mode .week__cell--today-col.week__row--last{box-shadow:inset 1.6px 0
       <span class="mon" id="app-month"></span>
       <button class="btn btn--sm" id="btn-fwd-month" title="翌月を表示（編集者のみ）" style="display:none">翌月 ▶</button>
       <button class="btn btn--sm" id="btn-next-month" title="今月に戻る" style="display:none">今月 ▶</button>
+      <span id="pub-badge" title="この月はまだスタッフに公開されていません" style="display:none;background:#d33;color:#fff;font-size:11px;font-weight:800;border-radius:999px;padding:2px 9px;">未公開</span>
     </div>
   </div>
   <div class="seg" id="seg-view">
@@ -379,6 +382,7 @@ body.viewer-mode .week__cell--today-col.week__row--last{box-shadow:inset 1.6px 0
   </div>
   <span class="chip chip--ok" id="viol-chip" title="クリックでNG違反の詳細へ">違反なし ✓</span>
   <button class="btn" id="btn-edit">✏️ 編集モード</button>
+  <button class="btn" id="btn-publish" title="スタッフに公開し、LINEで通知します" style="display:none">📢 公開</button>
   <button class="btn" id="btn-undo" disabled>↩ 元に戻す</button>
   <button class="btn" id="btn-list">📋 個人別</button>
   <button class="btn" id="btn-print">🖨 印刷/PDF</button>
@@ -485,6 +489,9 @@ const LS_KEY="murugi.shift.data.v1";
 const LS_LIVE="murugi.shift.live.v1";
 /* ⬇⬇ デプロイ後、GAS Web App の /exec URL をここに貼る（DEPLOY.md STEP7）⬇⬇ */
 const GAS_URL="https://script.google.com/macros/s/AKfycby8gdahHDf9MYcAjoLiP2ZpeQzWHzMNX8soKcOK-OkxHn6MuSfK46Is5oY4WlvAUrdT/exec";
+const WORKER_URL="https://murugi-shift-bot.yugo-katsuyama.workers.dev";   // 公開ボタン・公開状態照会（LIFF Worker）
+/* JST（UTC+9固定・端末タイムゾーン非依存）の現在月 "YYYY-MM" */
+function jstNowYM(){const d=new Date(Date.now()+9*3600*1000);return d.getUTCFullYear()+"-"+String(d.getUTCMonth()+1).padStart(2,"0");}
 let LIVE={on:false,month:null,liveMonth:null,viewingMonth:null,viewerPass:null,editorToken:null,editor:false,viewingPrev:false};
 const SLOTS_ALL=["10:30","11:15","16:00","16:30","17:00"];
 
@@ -1133,7 +1140,13 @@ async function fetchMonthView(monthStr){
 }
 
 function startPolling(){
-  const tick=()=>{ if(LIVE.on&&document.visibilityState==="visible"&&!(EDIT_MODE&&EP_TARGET)&&!LIVE.viewingPrev) fetchLive(LIVE.liveMonth,LIVE.viewerPass,LIVE.editorToken); };
+  const tick=async()=>{
+    if(!(LIVE.on&&document.visibilityState==="visible"&&!(EDIT_MODE&&EP_TARGET)&&!LIVE.viewingPrev))return;
+    await fetchLive(LIVE.liveMonth,LIVE.viewerPass,LIVE.editorToken);
+    // フェッチ中に月ナビが始まっていた場合（focusはclickより先に発火するため）、
+    // 今月データで上書きしてしまうので、見ようとしている月を取り直して自己修復する
+    if(LIVE.viewingPrev&&LIVE.viewingMonth)await fetchMonthView(LIVE.viewingMonth);
+  };
   window.addEventListener("focus",tick);
   document.addEventListener("visibilitychange",tick);
   clearInterval(startPolling._i); startPolling._i=setInterval(tick,45000);
@@ -1142,13 +1155,14 @@ async function enterLive(pass,token){
   const mg=document.getElementById("live-msg"); if(mg)mg.textContent="";
   if(!liveConfigured()){ if(mg)mg.textContent="（未デプロイ）GAS_URL が未設定です。DEPLOY.md を参照"; return; }
   LIVE.editor=!!(token&&token.trim());
-  const okp=await fetchLive("active",pass.trim(),token.trim());
+  const okp=await fetchLive(jstNowYM(),pass.trim(),token.trim());   // 今月=クロック基準（GASのactive_monthに依存しない）
   if(okp){
     LIVE.on=true; LIVE.viewerPass=pass.trim(); LIVE.editorToken=(token||"").trim();
     LIVE.liveMonth=LIVE.month;
     try{ localStorage.setItem(LS_LIVE,JSON.stringify({pass:LIVE.viewerPass,token:LIVE.editorToken})); }catch(e){}
     document.getElementById("btn-prev-month").style.display="";
     document.getElementById("btn-fwd-month").style.display="";
+    if(LIVE.editor)document.getElementById("btn-publish").style.display="";
     startPolling();
   }else{ LIVE.editor=false; }
 }
@@ -1221,6 +1235,13 @@ document.addEventListener("DOMContentLoaded",()=>{
     // 閲覧専用の「翌月」は当月表示中だけ（当月→翌月の1段のみ。編集者は常時）
     document.getElementById("btn-fwd-month").style.display=(LIVE.editor||viewingCurrent)?"":"none";
   }
+  async function updatePubBadge(){
+    const el=document.getElementById("pub-badge"); if(!el)return;
+    const ym=navViewYm();
+    if(!LIVE.on||!LIVE.editor||!ym||ym<=jstNowYM()){ el.style.display="none"; return; }
+    try{ const b=await fetch(WORKER_URL+"/published?month="+ym).then(r=>r.json()); el.style.display=b.published?"none":""; }
+    catch(e){ el.style.display="none"; }
+  }
   async function navToMonth(target){
     if(!LIVE.liveMonth||!LIVE.on)return;
     const label=Number(target.split("-")[1])+"月";
@@ -1233,8 +1254,29 @@ document.addEventListener("DOMContentLoaded",()=>{
       if(ok){LIVE.viewingPrev=false;LIVE.viewingMonth=null;showToast("今月のシフトを表示中");}
     }else{
       ok=await fetchMonthView(target);
-      if(ok&&!LIVE.editor&&Object.keys(DATA.assignments||{}).length===0){
-        // 閲覧専用には未作成の月を見せない（今月へ戻す）
+      const empty=ok&&Object.keys(DATA.assignments||{}).length===0;
+      if(ok&&LIVE.editor&&empty&&target===navYmAdd(jstNowYM(),1)){
+        // 翌月がまだ空 → 自動で定休日を書き込んで準備（旧「翌月のシフトを作成する」を吸収・冪等）
+        showToast(label+"を準備中…（定休日を設定）");
+        const [ty,tm]=target.split("-").map(Number);
+        const cw=DATA.closedWeekday||[5];
+        const last=new Date(ty,tm,0).getDate();
+        for(let dd=1;dd<=last;dd++){
+          if(cw.includes(new Date(ty,tm-1,dd).getDay()))
+            await postSlot(target+"-"+String(dd).padStart(2,"0"),"__closed",[],[]);   // 直列（GASロック対策）
+        }
+        await fetchMonthView(target);
+        showToast(label+"を準備しました（定休日を設定）");
+      }else if(ok&&!LIVE.editor&&target>jstNowYM()){
+        // 閲覧専用: 未公開の翌月は見せない（公開フラグで判定。照会失敗時はデータ有無で代用）
+        let visible=!empty;
+        try{const b=await fetch(WORKER_URL+"/published?month="+target).then(r=>r.json());visible=visible&&b.published;}catch(e){}
+        if(!visible){
+          showToast(label+"のシフトはまだ準備中です");
+          await fetchLive(LIVE.liveMonth,LIVE.viewerPass,LIVE.editorToken);
+          LIVE.viewingPrev=false;LIVE.viewingMonth=null;
+        }else{ showToast(label+"を表示中"); }
+      }else if(ok&&!LIVE.editor&&empty){
         showToast(label+"のシフトはまだ準備中です");
         await fetchLive(LIVE.liveMonth,LIVE.viewerPass,LIVE.editorToken);
         LIVE.viewingPrev=false;LIVE.viewingMonth=null;
@@ -1244,6 +1286,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     }
     if(!ok){LIVE.viewingPrev=wasPrev;LIVE.viewingMonth=wasView;showToast("データを取得できませんでした");}
     navButtons();
+    updatePubBadge();
   }
   document.getElementById("btn-prev-month").addEventListener("click",()=>navToMonth(navYmAdd(navViewYm(),-1)));
   document.getElementById("btn-fwd-month").addEventListener("click",()=>{
@@ -1251,6 +1294,23 @@ document.addEventListener("DOMContentLoaded",()=>{
     navToMonth(navYmAdd(navViewYm(),1));
   });
   document.getElementById("btn-next-month").addEventListener("click",()=>navToMonth(LIVE.liveMonth));
+
+  // 📢 公開: 表示中の月をスタッフに公開（翌月タブ解放）＋LINE通知。公開済み月への実行は更新通知
+  document.getElementById("btn-publish").addEventListener("click", async ()=>{
+    if(!LIVE.on||!LIVE.editor)return;
+    const month=navViewYm(); const mLabel=Number(month.split("-")[1])+"月";
+    if(Object.keys(DATA.assignments||{}).length===0&&!confirm(mLabel+"はまだ空です。公開しますか？"))return;
+    if(!confirm(mLabel+"のシフト表を公開し、スタッフにLINEで通知します。よろしいですか？\n（あなたのLINEにも同じ通知が届きます）"))return;
+    showToast("公開・通知中…");
+    try{
+      const r=await fetch(WORKER_URL+"/publish",{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({token:LIVE.editorToken,month})});
+      const b=await r.json();
+      if(b.ok){
+        showToast((b.newly_published?mLabel+"を公開しました。":"")+"スタッフ"+b.sent+"名に通知"+(b.failed&&b.failed.length?"（失敗: "+b.failed.join("・")+"）":" ✓"));
+        updatePubBadge();
+      }else{ showToast("⚠️ "+(b.error||"公開に失敗しました")); }
+    }catch(e){ showToast("⚠️ 公開に失敗しました（通信エラー）"); }
+  });
   document.getElementById("live-token").addEventListener("keydown",e=>{ if(e.key==="Enter")document.getElementById("live-enter").click(); });
   document.getElementById("live-pass").addEventListener("keydown",e=>{ if(e.key==="Enter")document.getElementById("live-enter").click(); });
 
@@ -1283,7 +1343,7 @@ document.addEventListener("DOMContentLoaded",()=>{
           showToast(FRAG.month.split("-")[1].replace(/^0/,"")+"月を読み込み中…");
           LIVE.viewingPrev=true;   // フェッチ中〜表示中のポーリング上書きを抑止
           if(!await fetchMonthView(FRAG.month)){ LIVE.viewingPrev=false; showToast("指定月を取得できませんでした（今月を表示）"); }
-          navButtons();
+          navButtons();updatePubBadge();
         }
       }
     }
@@ -1293,8 +1353,8 @@ document.addEventListener("DOMContentLoaded",()=>{
         const ls=JSON.parse(localStorage.getItem(LS_LIVE)||"null");
         if(ls&&ls.pass&&liveConfigured()){
           LIVE.editor=!!ls.token;
-          if(await fetchLive("active",ls.pass,ls.token||"")){
-            LIVE.on=true;LIVE.viewerPass=ls.pass;LIVE.editorToken=ls.token||"";LIVE.liveMonth=LIVE.month;document.getElementById("btn-prev-month").style.display="";document.getElementById("btn-fwd-month").style.display="";startPolling();restored=true;
+          if(await fetchLive(jstNowYM(),ls.pass,ls.token||"")){
+            LIVE.on=true;LIVE.viewerPass=ls.pass;LIVE.editorToken=ls.token||"";LIVE.liveMonth=LIVE.month;document.getElementById("btn-prev-month").style.display="";document.getElementById("btn-fwd-month").style.display="";if(LIVE.editor)document.getElementById("btn-publish").style.display="";startPolling();restored=true;
           }
         }
       }catch(e){}
