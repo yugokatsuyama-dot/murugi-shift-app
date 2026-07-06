@@ -493,6 +493,26 @@ const WORKER_URL="https://murugi-shift-bot.yugo-katsuyama.workers.dev";   // 公
 /* JST（UTC+9固定・端末タイムゾーン非依存）の現在月 "YYYY-MM" */
 function jstNowYM(){const d=new Date(Date.now()+9*3600*1000);return d.getUTCFullYear()+"-"+String(d.getUTCMonth()+1).padStart(2,"0");}
 let LIVE={on:false,month:null,liveMonth:null,viewingMonth:null,viewerPass:null,editorToken:null,editor:false,viewingPrev:false};
+
+/* 公開状態バッジ: 未公開の翌月 or 「公開後に編集した月」(DIRTY) に警告表示。DIRTYは公開で解除・localStorage永続 */
+const LS_DIRTY="murugi.shift.dirty.v1";
+let DIRTY=new Set();
+try{ DIRTY=new Set(JSON.parse(localStorage.getItem(LS_DIRTY)||"[]")); }catch(e){}
+function persistDirty(){ try{ localStorage.setItem(LS_DIRTY,JSON.stringify([...DIRTY])); }catch(e){} }
+function markPubDirty(ym){ if(!ym)return; DIRTY.add(ym); persistDirty(); updatePubBadge(); }
+function clearPubDirty(ym){ if(DIRTY.delete(ym))persistDirty(); }
+async function updatePubBadge(){
+  const el=document.getElementById("pub-badge"); if(!el)return;
+  const ym=LIVE.viewingMonth||LIVE.liveMonth;
+  if(!LIVE.on||!LIVE.editor||!ym){ el.style.display="none"; return; }
+  let unpublished=false;
+  if(ym>jstNowYM()){   // 翌月以降は公開フラグを照会（当月は常に公開扱い）
+    try{ const b=await fetch(WORKER_URL+"/published?month="+ym).then(r=>r.json()); unpublished=!b.published; }catch(e){ unpublished=false; }
+  }
+  if(unpublished){ el.textContent="未公開"; el.title="この月はまだスタッフに公開されていません。「📢 公開」を押してください"; el.style.display=""; }
+  else if(DIRTY.has(ym)){ el.textContent="未公開の変更"; el.title="公開後に修正しています。「📢 公開」で最新をスタッフに通知してください"; el.style.display=""; }
+  else{ el.style.display="none"; }
+}
 const SLOTS_ALL=["10:30","11:15","16:00","16:30","17:00"];
 
 /* 架空サンプル（公開ページで操作感を試すため。実在の人物ではない） */
@@ -1044,6 +1064,7 @@ async function confirmEdit(){
   if(selChanged)saved=(await postSlot(iso,time,sel,ok))&&saved;
   if(closedChanged)saved=(await postSlot(iso,"__closed",nowClosed?[]:["off"],[]))&&saved;   // "off"=解除（GAS側で解釈）
   await fetchLive(LIVE.viewingMonth||LIVE.month,LIVE.viewerPass,LIVE.editorToken); // サーバーの最新で整合（保存成功なら反映が残る）
+  if(saved)markPubDirty(LIVE.viewingMonth||LIVE.liveMonth);   // 公開後の編集 → 次の公開まで「未公開の変更」バッジ
   showToast(saved?`${iso.slice(5)} を保存しました ✓`:"⚠️ 保存できませんでした（編集トークンを確認してください）");
 }
 function emptySlot(){
@@ -1163,7 +1184,7 @@ async function enterLive(pass,token){
     document.getElementById("btn-prev-month").style.display="";
     document.getElementById("btn-fwd-month").style.display="";
     if(LIVE.editor)document.getElementById("btn-publish").style.display="";
-    startPolling();
+    startPolling();updatePubBadge();
   }else{ LIVE.editor=false; }
 }
 
@@ -1235,13 +1256,6 @@ document.addEventListener("DOMContentLoaded",()=>{
     // 閲覧専用の「翌月」は当月表示中だけ（当月→翌月の1段のみ。編集者は常時）
     document.getElementById("btn-fwd-month").style.display=(LIVE.editor||viewingCurrent)?"":"none";
   }
-  async function updatePubBadge(){
-    const el=document.getElementById("pub-badge"); if(!el)return;
-    const ym=navViewYm();
-    if(!LIVE.on||!LIVE.editor||!ym||ym<=jstNowYM()){ el.style.display="none"; return; }
-    try{ const b=await fetch(WORKER_URL+"/published?month="+ym).then(r=>r.json()); el.style.display=b.published?"none":""; }
-    catch(e){ el.style.display="none"; }
-  }
   async function navToMonth(target){
     if(!LIVE.liveMonth||!LIVE.on)return;
     const label=Number(target.split("-")[1])+"月";
@@ -1306,6 +1320,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       const r=await fetch(WORKER_URL+"/publish",{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({token:LIVE.editorToken,month})});
       const b=await r.json();
       if(b.ok){
+        clearPubDirty(month);   // 公開したので「未公開の変更」を解除
         showToast((b.newly_published?mLabel+"を公開しました。":"")+"スタッフ"+b.sent+"名に通知"+(b.failed&&b.failed.length?"（失敗: "+b.failed.join("・")+"）":" ✓"));
         updatePubBadge();
       }else{ showToast("⚠️ "+(b.error||"公開に失敗しました")); }
@@ -1354,7 +1369,7 @@ document.addEventListener("DOMContentLoaded",()=>{
         if(ls&&ls.pass&&liveConfigured()){
           LIVE.editor=!!ls.token;
           if(await fetchLive(jstNowYM(),ls.pass,ls.token||"")){
-            LIVE.on=true;LIVE.viewerPass=ls.pass;LIVE.editorToken=ls.token||"";LIVE.liveMonth=LIVE.month;document.getElementById("btn-prev-month").style.display="";document.getElementById("btn-fwd-month").style.display="";if(LIVE.editor)document.getElementById("btn-publish").style.display="";startPolling();restored=true;
+            LIVE.on=true;LIVE.viewerPass=ls.pass;LIVE.editorToken=ls.token||"";LIVE.liveMonth=LIVE.month;document.getElementById("btn-prev-month").style.display="";document.getElementById("btn-fwd-month").style.display="";if(LIVE.editor)document.getElementById("btn-publish").style.display="";startPolling();updatePubBadge();restored=true;
           }
         }
       }catch(e){}
