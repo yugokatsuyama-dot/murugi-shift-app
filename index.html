@@ -935,13 +935,22 @@ function openEpop(iso,time,viewName,cellEl){
     });
   });
 
+  // 休業日トグル（日単位。追加の休み＝祝日・臨時休業などを設定/解除）
+  const dayClosed=!!(DATA.assignments[iso]&&DATA.assignments[iso].closed);
+  EP_TARGET.wasClosed=dayClosed;
+  const closedGrp=document.createElement("div");closedGrp.className="epop__grp epop__grp--closed";
+  closedGrp.innerHTML='<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1.5px solid '+(dayClosed?'#d33':'#e3e6ea')+';border-radius:10px;background:'+(dayClosed?'rgba(217,51,51,.06)':'#fafbfc')+';cursor:pointer;font-size:13px;">'+
+    '<input type="checkbox" id="ep-closed"'+(dayClosed?" checked":"")+' style="width:18px;height:18px;">'+
+    '<span><b>🚫 この日を休業日にする</b><br><span style="color:#8a94a0;font-size:11.5px;">この日全体が「休業日」表示になります（チェックを外すと営業日に戻ります）</span></span></label>';
+  body.insertBefore(closedGrp, body.firstChild);
+
   // 助っ人（名簿に無い人）の自由入力
   const guestGrp=document.createElement("div");guestGrp.className="epop__grp epop__grp--guest";
   guestGrp.innerHTML='<h4>助っ人（名簿にない人を追加）</h4>';
   const guestAddRow=document.createElement("div");guestAddRow.className="guest-add";
   guestAddRow.innerHTML='<input type="text" id="ep-guest" placeholder="名前を入力" maxlength="12" autocomplete="off"> <button type="button" id="ep-guest-add">＋追加</button>';
   guestGrp.appendChild(guestAddRow);
-  body.insertBefore(guestGrp, body.firstChild);   // 先頭に置いてモバイルでも必ず見える
+  body.insertBefore(guestGrp, closedGrp.nextSibling);   // 休業日トグルの直下（モバイルでも必ず見える）
   const addGuest=(name)=>{
     name=(name||"").trim();
     if(!name){showToast("名前を入力してください");return;}
@@ -991,30 +1000,46 @@ function applyEditLocal(iso,time,sel,ok){
   else if(DATA.assignments[iso].__ok){delete DATA.assignments[iso].__ok[time];}
   persistCurrent();refreshAll();
 }
+function applyClosedLocal(iso,closed){
+  snapshot();
+  if(!DATA.assignments[iso])DATA.assignments[iso]={};
+  if(closed)DATA.assignments[iso].closed=true;else delete DATA.assignments[iso].closed;
+  persistCurrent();refreshAll();
+}
 async function confirmEdit(){
   if(!EP_TARGET)return;
   const {iso,time,cur}=EP_TARGET;
-  const sel=[...document.querySelectorAll('#ep-body input:checked')].map(c=>c.value);
-  if(JSON.stringify(sel)===JSON.stringify(cur)){closeEpop();return;}
+  const sel=[...document.querySelectorAll('#ep-body .erow input:checked')].map(c=>c.value);
+  const selChanged=JSON.stringify(sel)!==JSON.stringify(cur);
+  // 休業日トグル（日単位。__closed 行の追加/解除）
+  const closedCb=document.getElementById("ep-closed");
+  const nowClosed=!!(closedCb&&closedCb.checked);
+  const closedChanged=nowClosed!==!!EP_TARGET.wasClosed;
+  if(!selChanged&&!closedChanged){closeEpop();return;}
   const [y,m,d]=iso.split("-").map(Number);const wd=new Date(y,m-1,d).getDay();
   // (b) NGの人を入れた場合「今日だけOK」を確認（恒久NGは変えない）
   let ok=[];
-  const ngSel=sel.filter(id=>{const s=STAFF_MAP[id];return s&&s.ng_rules&&ngViolates(s.ng_rules,d,wd,time);});
-  if(ngSel.length){
-    const nm=ngSel.map(id=>{const s=STAFF_MAP[id];return s?(s.display||s.first):id;}).join("・");
-    if(confirm(nm+" は本来この枠がNGです。\n「今日だけOK」として記録し赤表示を消しますか？\n（恒久NGは変わりません）"))ok=ngSel;
+  if(selChanged){
+    const ngSel=sel.filter(id=>{const s=STAFF_MAP[id];return s&&s.ng_rules&&ngViolates(s.ng_rules,d,wd,time);});
+    if(ngSel.length){
+      const nm=ngSel.map(id=>{const s=STAFF_MAP[id];return s?(s.display||s.first):id;}).join("・");
+      if(confirm(nm+" は本来この枠がNGです。\n「今日だけOK」として記録し赤表示を消しますか？\n（恒久NGは変わりません）"))ok=ngSel;
+    }
+    applyEditLocal(iso,time,sel,ok);
   }
-  applyEditLocal(iso,time,sel,ok);
+  if(closedChanged)applyClosedLocal(iso,nowClosed);
   closeEpop();
-  if(!(LIVE.on&&LIVE.editor)){ showToast(`${iso.slice(5)} ${time} を更新`); return; }
+  if(!(LIVE.on&&LIVE.editor)){ showToast(`${iso.slice(5)} を更新`); return; }
   showToast("保存中…");
-  const saved=await postSlot(iso,time,sel,ok);
+  let saved=true;
+  if(selChanged)saved=(await postSlot(iso,time,sel,ok))&&saved;
+  if(closedChanged)saved=(await postSlot(iso,"__closed",nowClosed?[]:["off"],[]))&&saved;   // "off"=解除（GAS側で解釈）
   await fetchLive(LIVE.viewingMonth||LIVE.month,LIVE.viewerPass,LIVE.editorToken); // サーバーの最新で整合（保存成功なら反映が残る）
-  showToast(saved?`${iso.slice(5)} ${time} を保存しました ✓`:"⚠️ 保存できませんでした（編集トークンを確認してください）");
+  showToast(saved?`${iso.slice(5)} を保存しました ✓`:"⚠️ 保存できませんでした（編集トークンを確認してください）");
 }
 function emptySlot(){
   if(!EP_TARGET)return;
-  document.querySelectorAll('#ep-body input:checked').forEach(c=>{c.checked=false;c.closest(".erow").classList.remove("sel");});
+  document.querySelectorAll('#ep-body .erow input:checked').forEach(c=>{c.checked=false;c.closest(".erow").classList.remove("sel");});
 }
 
 /* ---------- 書出し ---------- */
