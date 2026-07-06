@@ -1253,6 +1253,12 @@ document.addEventListener("DOMContentLoaded",()=>{
   // 起動順: ⓪ フラグメント → ① ライブ記憶 → ② ファイル記憶 → ③ ゲート表示
   (async()=>{
     let restored=false;
+    // 自動ログインが走る場合は、完了までゲート（パスコード画面）を見せない
+    let lsSaved=null; try{ lsSaved=JSON.parse(localStorage.getItem(LS_LIVE)||"null"); }catch(e){}
+    if(liveConfigured()&&(FRAG||(lsSaved&&lsSaved.pass))){
+      document.getElementById("gate").classList.add("hidden");
+      showToast("シフト表を読み込み中…");
+    }
     // ⓪ フラグメント自動ログイン
     if(FRAG&&liveConfigured()){
       await enterLive(FRAG.pass,FRAG.token);   // 成功時: LIVE設定+LS保存+startPolling
