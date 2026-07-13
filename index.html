@@ -183,7 +183,7 @@ body.edit-mode [data-cell="shift"]:hover{outline:2px dashed var(--brand);outline
 .epop__grp{margin:4px 0 8px}
 .epop__grp h4{margin:0 0 3px;font-size:10px;letter-spacing:.07em;color:var(--muted);
   border-bottom:1px solid var(--line);padding-bottom:3px;position:sticky;top:0;background:var(--surface)}
-.erow{display:flex;align-items:center;gap:8px;padding:6px 7px;border-radius:var(--r-sm);cursor:pointer}
+.erow{display:flex;flex-wrap:wrap;align-items:center;gap:1px 8px;padding:6px 7px;border-radius:var(--r-sm);cursor:pointer}
 .erow:hover{background:var(--surface-2)}
 .erow.sel{background:rgba(42,109,244,.10)}
 .erow input{width:15px;height:15px;flex:none;accent-color:var(--brand)}
@@ -195,7 +195,7 @@ body.edit-mode [data-cell="shift"]:hover{outline:2px dashed var(--brand);outline
 .tag--mgmt{color:var(--mgmt);background:rgba(106,76,170,.13)}
 .tag--busy{color:var(--warn);background:rgba(217,107,20,.13)}
 .tag--ok{color:var(--ok);background:rgba(31,157,87,.13)}
-.erow__ng-why{font-size:9.5px;color:var(--bad);width:100%;padding:0 0 0 23px;margin-top:-2px}
+.erow__ng-why{font-size:10px;color:var(--bad);flex-basis:100%;padding:0 0 0 23px;line-height:1.5;word-break:break-word;overflow-wrap:anywhere}
 .erow.dim{opacity:.55}
 .epop__f{padding:9px 10px;border-top:1px solid var(--line);display:flex;gap:6px;align-items:center}
 .epop__f .spacer{flex:1}
@@ -821,7 +821,7 @@ function renderViolations(){
   const rows=[...VIOLATION_MAP.keys()].sort().map(k=>{
     const [iso,time,id]=k.split("|");const s=STAFF_MAP[id];
     const name=s?(s.display||s.first):id;
-    return `<div class="viol-row">${parseInt(iso.slice(8),10)}日 ${time} <b>${esc(name)}</b><br><small>${esc(VIOLATION_MAP.get(k))}</small></div>`;
+    return `<div class="viol-row" title="${esc(VIOLATION_MAP.get(k))}">${parseInt(iso.slice(8),10)}日 ${time} <b>${esc(name)}</b><br><small>${esc(ngHuman(VIOLATION_MAP.get(k)))}</small></div>`;
   });
   el.innerHTML=`<div class="viol-count">違反 ${VIOLATION_MAP.size}件 ❌</div><div class="viol-list">${rows.join("")}</div>`;
   chip.textContent=`違反 ${VIOLATION_MAP.size}件 ❌`;chip.className="chip chip--bad";
@@ -927,8 +927,26 @@ function staffAssignedElsewhere(iso,time,id){
   return SLOTS_ALL.some(t=>t!==time&&Array.isArray(day[t])&&day[t].includes(id));
 }
 function ngHuman(dsl){
-  // 違反該当の簡易説明（DSL生表示の補助）
-  return dsl;
+  // NG DSL → 読みやすい日本語（例 "wd月,水:全;d9:昼" → "毎週月・水 終日 ／ 9日 昼"）。元DSLはtitle属性で参照可
+  const SLOT={"全":"終日","昼":"昼","夜":"夜"};
+  const items=String(dsl||"").split(/[;；]/).map(t=>t.trim()).filter(Boolean).map(tok=>{
+    let soft=false;
+    if(tok.startsWith("soft:")){soft=true;tok=tok.slice(5).trim();}
+    if(tok.startsWith("exif:")){
+      const ref=STAFF_MAP[tok.slice(5).trim()];
+      return `※${ref?(ref.display||ref.first):tok.slice(5)}がNGの枠はOK`;
+    }
+    if(tok.startsWith("ex:"))return `※${tok.slice(3).replace(/^d/,"").split(/[,，]/).join("・")}日はOK`;
+    const i=tok.indexOf(":");if(i<0)return tok;
+    const key=tok.slice(0,i).trim(),slot=SLOT[tok.slice(i+1).trim()]||tok.slice(i+1).trim();
+    let label;
+    if(key==="all")label=`毎日 ${slot}`;
+    else if(key.startsWith("wd"))label=`毎週${key.slice(2).split(/[,，]/).join("・")} ${slot}`;
+    else if(key.startsWith("d"))label=`${key.slice(1).split(/[,，]/).join("・")}日 ${slot}`;
+    else return tok;
+    return soft?`(なるべく)${label}`:label;
+  });
+  return items.join(" ／ ");
 }
 function openEpop(iso,time,viewName,cellEl){
   EP_TARGET={iso,time,viewName};
@@ -960,7 +978,7 @@ function openEpop(iso,time,viewName,cellEl){
           <label class="erow__name" for="cb-${s.id}">
             <b>${esc(s.display||s.first)}</b><span class="erow__tags">${tags.join("")}</span>
           </label>
-          ${isNg?`<div class="erow__ng-why" title="${esc(s.ng_rules)}">NG理由: ${esc(s.ng_rules)}</div>`:""}
+          ${isNg?`<div class="erow__ng-why" title="${esc(s.ng_rules)}">NG理由: ${esc(ngHuman(s.ng_rules))}</div>`:""}
         </div>`};
     }).sort((a,b)=>a.rank-b.rank||0);
     return `<div class="epop__grp"><h4>${g.label}</h4>${staff.map(x=>x.html).join("")}</div>`;
