@@ -712,7 +712,7 @@ function renderWeek(week,viewName){
           let mgSubs=[];
           if(slot.time==="16:30"){
             const mgRaw=(a&&a["16:00"])||[];  // 有ムル16:00の管理者代打（非mgmt）はエクリヤ16:30にも表示
-            mgSubs=mgRaw.filter(id=>!ek.includes(id)&&(!STAFF_MAP[id]||!STAFF_MAP[id].mgmt));
+            mgSubs=mgRaw.filter(id=>!ek.includes(id)&&(!STAFF_MAP[id]||(!STAFF_MAP[id].mgmt&&STAFF_MAP[id].org===ORG.EKURIYA)));
             if(mgSubs.length)ek=ek.concat(mgSubs);
           }
           const dispatchSet=new Set(mgSubs);
