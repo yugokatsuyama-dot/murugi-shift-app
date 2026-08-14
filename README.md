@@ -32,10 +32,13 @@
   "staff": [ { "id": "x1", "family": "姓", "first": "名", "display": "表示名",
               "org": "murugi|ekuriya", "mgmt": false, "ng_rules": "wd火:全;all:夜" } ],
   "assignments": { "2026-06-01": { "10:30": ["x1"], "11:15": ["x2"] },
-                   "2026-06-05": { "closed": true } },
+                   "2026-06-05": { "closed": true },
+                   "2026-06-03": { "10:30": ["x1"], "ekuriyaLunch": true } },
   "events": [ { "name": "イベント名", "date": "6/20" } ]
 }
 ```
+
+`assignments[日付].ekuriyaLunch: true` は、その日を火曜日と同様の「エクリヤ昼営業日」として扱う日次の上書きフラグです（`rules.operating.ekuriya` の曜日パターンより優先されます）。キーが無い日は通常どおり曜日パターンに従います。
 
 NG_rules DSL: `d<日>:<枠>` / `wd<曜日,..>:<枠>` / `all:<枠>` / `ex:d<日>` / `exif:<id>`
 （枠 = 全 | 昼 | 夜、`;` 区切り）
