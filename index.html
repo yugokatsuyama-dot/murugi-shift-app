@@ -431,6 +431,7 @@ body.viewer-mode .week__cell--today-col.week__row--last{box-shadow:inset 1.6px 0
           <div class="legend__row"><span class="legend__sw" style="background:var(--dinner-mid)"></span>16:30（ディナー仕込・中）</div>
           <div class="legend__row"><span class="legend__sw" style="background:var(--dinner2)"></span>17:00（ディナー営業・薄）</div>
           <div class="legend__row"><span class="legend__sw" style="background:var(--closed-bg)"></span>定休日（金曜）</div>
+          <div class="legend__row"><span class="legend__sw" style="background:var(--prep-bg)"></span>仕込み日（有ムル表示）／休業日（エクリヤ表示）</div>
           <div class="legend__row"><span style="color:var(--mgmt);font-weight:800">管</span>管理者 出勤マーク</div>
           <div class="legend__row"><span style="color:var(--dispatched);font-weight:800">緑</span>派遣で他枠勤務</div>
           <div class="legend__row"><span style="color:var(--event)">★</span>要警戒イベント</div>
@@ -685,7 +686,12 @@ function renderWeek(week,viewName){
         c.dataset.time=slot.time;c.dataset.cell="shift";
         if(!d){c.classList.add("empty");el.appendChild(c);return;}
         const a=DATA.assignments[d.iso];
-        if(a&&a.closed){
+       if(a&&a.prepDay){
+        if(viewName==="murugi"){c.classList.add("week__cell--prep");c.textContent=(slotIdx===0&&p===0)?"仕込み日":"";}
+        else{c.classList.add("week__cell--closed");c.textContent=(slotIdx===0&&p===0)?"休業日":"";}
+        el.appendChild(c);return;
+      }
+      if(a&&a.closed){
           if(viewName==="murugi"&&a.marks&&a.marks[slot.time]&&p===0){c.classList.add("week__cell--prep");c.textContent=a.marks[slot.time];}
           else{c.classList.add("week__cell--closed");c.textContent=(slotIdx===0&&p===0)?(DATA.closedWeekday.includes(d.weekday)?"定休日":"休業日"):"";}
           el.appendChild(c);return;
@@ -1015,13 +1021,26 @@ function openEpop(iso,time,viewName,cellEl){
     '<span><b>🍽️ エクリヤ昼営業にする</b><br><span style="color:#8a94a0;font-size:11.5px;">この日を火曜日と同様にエクリヤの昼営業日として扱います（チェックを外すと通常の曜日パターンに戻ります）</span></span></label>';
   body.insertBefore(ekLunchGrp, closedGrp.nextSibling);
 
+  // 仕込み日トグル（日単位。この日を仕込み日として扱う上書き。有ムル表=仕込み日表示／エクリヤ表=休業日表示）
+  const dayPrep=!!(DATA.assignments[iso]&&DATA.assignments[iso].prepDay);
+  EP_TARGET.wasPrepDay=dayPrep;
+  const prepGrp=document.createElement("div");prepGrp.className="epop__grp epop__grp--prep-day";
+  prepGrp.innerHTML='<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1.5px solid '+(dayPrep?'#c9a227':'#e3e6ea')+';border-radius:10px;background:'+(dayPrep?'rgba(254,243,154,.35)':'#fafbfc')+';cursor:pointer;font-size:13px;">'+
+    '<input type="checkbox" id="ep-prep-day"'+(dayPrep?" checked":"")+' style="width:18px;height:18px;">'+
+    '<span><b>🔪 この日を仕込み日にする</b><br><span style="color:#8a94a0;font-size:11.5px;">有ムル表は「仕込み日」、エクリヤ表は「休業日」表示になります（チェックを外すと通常に戻ります）</span></span></label>';
+  body.insertBefore(prepGrp, ekLunchGrp.nextSibling);
+
+  // 休業日／エクリヤ昼営業／仕込み日は排他（同時に1つだけON。チェックすると他の2つは自動でOFF）
+  const excCbs=[closedGrp.querySelector('input'),ekLunchGrp.querySelector('input'),prepGrp.querySelector('input')];
+  excCbs.forEach(cb=>cb.addEventListener('change',()=>{if(cb.checked)excCbs.forEach(o=>{if(o!==cb)o.checked=false;});}));
+
   // 助っ人（名簿に無い人）の自由入力
   const guestGrp=document.createElement("div");guestGrp.className="epop__grp epop__grp--guest";
   guestGrp.innerHTML='<h4>助っ人（名簿にない人を追加）</h4>';
   const guestAddRow=document.createElement("div");guestAddRow.className="guest-add";
   guestAddRow.innerHTML='<input type="text" id="ep-guest" placeholder="名前を入力" maxlength="12" autocomplete="off"> <button type="button" id="ep-guest-add">＋追加</button>';
   guestGrp.appendChild(guestAddRow);
-  body.insertBefore(guestGrp, ekLunchGrp.nextSibling);   // 休業日トグルの直下（モバイルでも必ず見える）
+  body.insertBefore(guestGrp, prepGrp.nextSibling);   // 休業日トグルの直下（モバイルでも必ず見える）
   const addGuest=(name)=>{
     name=(name||"").trim();
     if(!name){showToast("名前を入力してください");return;}
@@ -1083,6 +1102,12 @@ function applyEkuriyaLunchLocal(iso,on){
   if(on)DATA.assignments[iso].ekuriyaLunch=true;else delete DATA.assignments[iso].ekuriyaLunch;
   persistCurrent();refreshAll();
 }
+function applyPrepDayLocal(iso,on){
+  snapshot();
+  if(!DATA.assignments[iso])DATA.assignments[iso]={};
+  if(on)DATA.assignments[iso].prepDay=true;else delete DATA.assignments[iso].prepDay;
+  persistCurrent();refreshAll();
+}
 async function confirmEdit(){
   if(!EP_TARGET)return;
   const {iso,time,cur}=EP_TARGET;
@@ -1096,7 +1121,11 @@ async function confirmEdit(){
   const ekLunchCb=document.getElementById("ep-ekuriya-lunch");
   const nowEkLunch=!!(ekLunchCb&&ekLunchCb.checked);
   const ekLunchChanged=nowEkLunch!==!!EP_TARGET.wasEkuriyaLunch;
-  if(!selChanged&&!closedChanged&&!ekLunchChanged){closeEpop();return;}
+  // 仕込み日トグル（日単位。prepDay 上書きの追加/解除。他2トグルとは排他）
+  const prepCb=document.getElementById("ep-prep-day");
+  const nowPrep=!!(prepCb&&prepCb.checked);
+  const prepChanged=nowPrep!==!!EP_TARGET.wasPrepDay;
+  if(!selChanged&&!closedChanged&&!ekLunchChanged&&!prepChanged){closeEpop();return;}
   const [y,m,d]=iso.split("-").map(Number);const wd=new Date(y,m-1,d).getDay();
   // (b) NGの人を入れた場合「今日だけOK」を確認（恒久NGは変えない）
   let ok=[];
@@ -1110,6 +1139,7 @@ async function confirmEdit(){
   }
   if(closedChanged)applyClosedLocal(iso,nowClosed);
   if(ekLunchChanged)applyEkuriyaLunchLocal(iso,nowEkLunch);
+  if(prepChanged)applyPrepDayLocal(iso,nowPrep);
   closeEpop();
   if(!(LIVE.on&&LIVE.editor)){ showToast(`${iso.slice(5)} を更新`); return; }
   showToast("保存中…");
@@ -1119,6 +1149,8 @@ async function confirmEdit(){
   // "__ekuriyaLunch" は __closed と同じ規約（[]=ON, ["off"]=OFF）でPOSTする。
   // ただしGAS Web App側（本リポジトリ外）に slot:"__ekuriyaLunch" の解釈・Sheet永続化の追加実装が必要（未対応の間はサーバー側で無視/失敗する想定）。
   if(ekLunchChanged)saved=(await postSlot(iso,"__ekuriyaLunch",nowEkLunch?[]:["off"],[]))&&saved;
+  // "__prepDay" も __closed と同じ規約（[]=ON, ["off"]=OFF）でPOSTする。GAS側にslot:"__prepDay"の解釈追加が必要。
+  if(prepChanged)saved=(await postSlot(iso,"__prepDay",nowPrep?[]:["off"],[]))&&saved;
   await fetchLive(LIVE.viewingMonth||LIVE.month,LIVE.viewerPass,LIVE.editorToken); // サーバーの最新で整合（保存成功なら反映が残る）
   if(saved)markPubDirty(LIVE.viewingMonth||LIVE.liveMonth);   // 公開後の編集 → 次の公開まで「未公開の変更」バッジ
   showToast(saved?`${iso.slice(5)} を保存しました ✓`:"⚠️ 保存できませんでした（編集トークンを確認してください）");
@@ -1135,7 +1167,7 @@ function buildAssignmentsJson(){
   keys.forEach((iso,i)=>{
     const a=DATA.assignments[iso];const f=[];
     if(a.closed){f.push("closed: true");if(a.marks)f.push(`marks: ${JSON.stringify(a.marks)}`);}
-    else{SLOTS_ALL.forEach(t=>{if(a[t]!==undefined)f.push(`"${t}":${JSON.stringify(a[t])}`);});if(a.event)f.push(`event:${JSON.stringify(a.event)}`);if(a.ekuriyaLunch)f.push("ekuriyaLunch: true");}
+    else{SLOTS_ALL.forEach(t=>{if(a[t]!==undefined)f.push(`"${t}":${JSON.stringify(a[t])}`);});if(a.event)f.push(`event:${JSON.stringify(a.event)}`);if(a.ekuriyaLunch)f.push("ekuriyaLunch: true");if(a.prepDay)f.push("prepDay: true");}
     lines.push(`    "${iso}": { ${f.join(", ")} }${i===keys.length-1?"":","}`);
   });
   lines.push("  }");return lines.join("\n");
