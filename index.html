@@ -604,7 +604,10 @@ function ingestFile(file){
 const EKURIYA_LUNCH_TIMES=["10:30","11:15"];
 function isOperating(org,weekday,time,iso){
   // 日次の上書き（エクリヤ昼営業）を最優先。無ければ曜日パターンで判定。
-  if(iso&&org==="ekuriya"&&EKURIYA_LUNCH_TIMES.includes(time)&&DATA.assignments[iso]&&DATA.assignments[iso].ekuriyaLunch)return true;
+    if(iso&&EKURIYA_LUNCH_TIMES.includes(time)&&DATA.assignments[iso]&&DATA.assignments[iso].ekuriyaLunch){
+    if(org==="ekuriya")return true;
+    if(org==="murugi")return false;
+    }
   if(DATA.closedWeekday.includes(weekday))return false;
   return ((DATA.operating[org]||{})[time]||[]).includes(weekday);
 }
@@ -683,9 +686,8 @@ function renderWeek(week,viewName){
         if(!d){c.classList.add("empty");el.appendChild(c);return;}
         const a=DATA.assignments[d.iso];
         if(a&&a.closed){
-          if(slotIdx===0&&p===0){c.classList.add("week__cell--closed");c.textContent="定休日";}
-          else if(viewName==="murugi"&&a.marks&&a.marks[slot.time]&&p===0){c.classList.add("week__cell--prep");c.textContent=a.marks[slot.time];}
-          else{const e=document.createElement("span");e.className="empty";e.textContent="";c.appendChild(e);}
+          if(viewName==="murugi"&&a.marks&&a.marks[slot.time]&&p===0){c.classList.add("week__cell--prep");c.textContent=a.marks[slot.time];}
+          else{c.classList.add("week__cell--closed");c.textContent=(slotIdx===0&&p===0)?(DATA.closedWeekday.includes(d.weekday)?"定休日":"休業日"):"";}
           el.appendChild(c);return;
         }
         const raw=(a&&a[slot.time])||[];
