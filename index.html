@@ -825,11 +825,11 @@ function ngViolates(dsl,day,weekday,time,_depth){
 function computeViolations(){
   VIOLATION_MAP.clear();
   Object.entries(DATA.assignments).forEach(([iso,ass])=>{
-    if(!ass||ass.closed)return;
+    if(!ass||ass.closed||ass.prepDay)return;
     const [y,m,d]=iso.split("-").map(Number);
     const wd=new Date(y,m-1,d).getDay();
     SLOTS_ALL.forEach(time=>{
-      const ok=(ass.__ok&&ass.__ok[time])||[];   // (b) その日限りNG承認 → 赤抑制
+      if(ass.nightOff&&(time==="16:00"||time==="16:30"||time==="17:00"))return; const ok=(ass.__ok&&ass.__ok[time])||[];   // (b) その日限りNG承認 → 赤抑制
       (ass[time]||[]).forEach(id=>{
         if(ok.indexOf(id)>=0)return;             // 承認済みは違反にしない
         const s=STAFF_MAP[id];if(!s||!s.ng_rules)return;
@@ -917,8 +917,8 @@ function renderStaffSchedule(){
   targets.forEach(s=>{
     const rows=[];
     dates.forEach(iso=>{
-      const day=DATA.assignments[iso];if(!day||day.closed)return;
-      const slots=Object.keys(SCHED_LABEL).filter(t=>Array.isArray(day[t])&&day[t].includes(s.id)).sort();
+      const day=DATA.assignments[iso];if(!day||day.closed||day.prepDay)return;
+      let slots=Object.keys(SCHED_LABEL).filter(t=>Array.isArray(day[t])&&day[t].includes(s.id)).sort(); if(day.nightOff)slots=slots.filter(t=>t!=="16:30"&&t!=="17:00");
       if(!slots.length)return;
       const [y,m,d]=iso.split("-").map(Number);
       const wd=SCHED_WD[new Date(y,m-1,d).getDay()];
