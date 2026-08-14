@@ -726,7 +726,7 @@ function renderWeek(week,viewName){
           }else{
             c.classList.remove(`week__cell--${slot.block}`);c.classList.add("week__cell--mgmt-mark");
             const mg=raw.filter(id=>STAFF_MAP[id]&&STAFF_MAP[id].mgmt);
-            c.appendChild(buildNames(distribute(mg,slot.positions,slot.capacity)[p],{emptyText:""}));
+            const others=raw.filter(id=>!mg.includes(id)); c.appendChild(buildNames(distribute(mg.concat(others),slot.positions,slot.capacity)[p],{dispatchedIds:new Set(others),emptyText:""}));
           }
         }
         el.appendChild(c);
