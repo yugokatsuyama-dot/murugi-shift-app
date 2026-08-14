@@ -686,12 +686,14 @@ function renderWeek(week,viewName){
         c.dataset.time=slot.time;c.dataset.cell="shift";
         if(!d){c.classList.add("empty");el.appendChild(c);return;}
         const a=DATA.assignments[d.iso];
-       if(a&&a.prepDay){
-        if(viewName==="murugi"){c.classList.add("week__cell--prep");c.textContent=(slotIdx===0&&p===0)?"仕込み日":"";}
-        else{c.classList.add("week__cell--closed");c.textContent=(slotIdx===0&&p===0)?"休業日":"";}
-        el.appendChild(c);return;
-      }
-      if(a&&a.closed){
+        if(a&&a.prepDay){
+          c.classList.remove(`week__cell--${slot.block}`);
+          if(viewName==="murugi"){c.classList.add("week__cell--prep");c.textContent=(slotIdx===0&&p===0)?"仕込み日":"";}
+          else{c.classList.add("week__cell--closed");c.textContent=(slotIdx===0&&p===0)?"休業日":"";}
+          el.appendChild(c);return;
+        }
+        if(a&&a.closed){
+          c.classList.remove(`week__cell--${slot.block}`);
           if(viewName==="murugi"&&a.marks&&a.marks[slot.time]&&p===0){c.classList.add("week__cell--prep");c.textContent=a.marks[slot.time];}
           else{c.classList.add("week__cell--closed");c.textContent=(slotIdx===0&&p===0)?(DATA.closedWeekday.includes(d.weekday)?"定休日":"休業日"):"";}
           el.appendChild(c);return;
