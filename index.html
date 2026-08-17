@@ -1056,8 +1056,26 @@ function openEpop(iso,time,viewName,cellEl){
   body.insertBefore(nightOffGrp, prepGrp.nextSibling);
 
   // 休業日／エクリヤ昼営業／仕込み日／夜休業は排他（同時に1つだけON。チェックすると他は自動でOFF）
-  const excCbs=[closedGrp.querySelector('input'),ekLunchGrp.querySelector('input'),prepGrp.querySelector('input'),nightOffGrp.querySelector('input')];
-  excCbs.forEach(cb=>cb.addEventListener('change',()=>{if(cb.checked)excCbs.forEach(o=>{if(o!==cb)o.checked=false;});}));
+  const closedCbEl=closedGrp.querySelector('input');
+  const excCbs=[closedCbEl,ekLunchGrp.querySelector('input'),prepGrp.querySelector('input'),nightOffGrp.querySelector('input')];
+  excCbs.forEach(cb=>cb.addEventListener('change',()=>{
+    if(cb.checked){
+      // 定休日（曜日パターン）の金曜等で他トグルに切り替えようとした場合は一言確認（誤操作で「定休日」情報が消えるのを防ぐ）
+      if(cb!==closedCbEl&&closedCbEl.checked){
+        const [yy,mm,dd]=iso.split("-").map(Number);
+        const wd=new Date(yy,mm-1,dd).getDay();
+        if(DATA.closedWeekday.includes(wd)){
+          const wdLabel=["日","月","火","水","木","金","土"][wd];
+          const toLabel=cb===ekLunchGrp.querySelector('input')?"エクリヤ昼営業":(cb===prepGrp.querySelector('input')?"仕込み日":"夜休業");
+          if(!confirm(`この日は定休日（${wdLabel}曜）です。「${toLabel}」に変更すると「定休日」表示が消えます。よろしいですか？`)){
+            cb.checked=false;
+            return;
+          }
+        }
+      }
+      excCbs.forEach(o=>{if(o!==cb)o.checked=false;});
+    }
+  }));
 
   // 助っ人（名簿に無い人）の自由入力
   const guestGrp=document.createElement("div");guestGrp.className="epop__grp epop__grp--guest";
