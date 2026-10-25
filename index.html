@@ -726,7 +726,7 @@ function renderWeek(week,viewName){
           }else{
             c.classList.remove(`week__cell--${slot.block}`);c.classList.add("week__cell--mgmt-mark");
             const mg=raw.filter(id=>STAFF_MAP[id]&&STAFF_MAP[id].mgmt);
-            const others=raw.filter(id=>!mg.includes(id)); c.appendChild(buildNames(distribute(mg.concat(others),slot.positions,slot.capacity)[p],{dispatchedIds:new Set(others),emptyText:""}));
+            const others=raw.filter(id=>!mg.includes(id)&&!(EKURIYA_LUNCH_TIMES.includes(slot.time)&&STAFF_MAP[id]&&STAFF_MAP[id].org===ORG.EKURIYA)); /* 昼枠のエクリヤ一般スタッフ(火曜・エクリヤ昼営業日の要員)は有ムル表に出さない。管理者・有ムル所属・16:00代打は従来どおり表示 */ c.appendChild(buildNames(distribute(mg.concat(others),slot.positions,slot.capacity)[p],{dispatchedIds:new Set(others),emptyText:""}));
           }
         }
         el.appendChild(c);
@@ -896,6 +896,7 @@ function toggleEditMode(){
 
 /* ---------- 個人別 ---------- */
 const SCHED_LABEL={"10:30":"10:30〜(ランチ通し)","11:15":"11:15〜(ランチ)","16:30":"16:30〜(ディナー早番)","17:00":"17:00〜(ディナー)"};
+const SCHED_LABEL_SUB={"16:30sub":"16:30〜(ディナー早番・代打)"};
 const SCHED_WD=["日","月","火","水","木","金","土"];
 function applyListVis(){
   const ek=document.getElementById("view-ekuriya"),mu=document.getElementById("view-murugi"),sl=document.getElementById("view-staff-schedule");
@@ -918,12 +919,15 @@ function renderStaffSchedule(){
     const rows=[];
     dates.forEach(iso=>{
       const day=DATA.assignments[iso];if(!day||day.closed||day.prepDay)return;
-      let slots=Object.keys(SCHED_LABEL).filter(t=>Array.isArray(day[t])&&day[t].includes(s.id)).sort(); if(day.nightOff)slots=slots.filter(t=>t!=="16:30"&&t!=="17:00");
+      let slots=Object.keys(SCHED_LABEL).filter(t=>Array.isArray(day[t])&&day[t].includes(s.id)).sort();
+      /* 有ムル16:00の管理者代打（エクリヤ一般スタッフ）はエクリヤ表16:30に出るのと同じく、個人別にも「16:30〜（代打）」として載せ出勤日数に数える */
+      if(s.org===ORG.EKURIYA&&!s.mgmt&&Array.isArray(day["16:00"])&&day["16:00"].includes(s.id)&&!slots.includes("16:30")){slots.push("16:30sub");slots.sort();}
+      if(day.nightOff)slots=slots.filter(t=>t!=="16:30"&&t!=="16:30sub"&&t!=="17:00");
       if(!slots.length)return;
       const [y,m,d]=iso.split("-").map(Number);
       const wd=SCHED_WD[new Date(y,m-1,d).getDay()];
-      const hl=slots.some(t=>t==="10:30"||t==="11:15"),hd=slots.some(t=>t==="16:30"||t==="17:00");
-      let label=slots.map(t=>SCHED_LABEL[t]).join(" ・ ");if(hl&&hd)label+="（通し）";
+      const hl=slots.some(t=>t==="10:30"||t==="11:15"),hd=slots.some(t=>t==="16:30"||t==="16:30sub"||t==="17:00");
+      let label=slots.map(t=>SCHED_LABEL[t]||SCHED_LABEL_SUB[t]).join(" ・ ");if(hl&&hd)label+="（通し）";
       rows.push({md:`${m}/${d}(${wd})`,label});
     });
     const card=document.createElement("div");card.className="sched-card";
