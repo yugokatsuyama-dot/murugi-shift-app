@@ -808,9 +808,15 @@ function ngViolates(dsl,day,weekday,time,_depth){
       const ref=STAFF_MAP[tok.slice(5).trim()];
       if(ref&&ref.ng_rules&&ngViolates(ref.ng_rules,day,weekday,time,1))return false;
     }
+    // with:<id> … <id>とセットで出勤する人。<id>がNGの枠は自分もNG（例: パパ=with:junko）
+    for(const tok of tokens){
+      if(!tok.startsWith("with:"))continue;
+      const ref=STAFF_MAP[tok.slice(5).trim()];
+      if(ref&&ref.ng_rules&&ngViolates(ref.ng_rules,day,weekday,time,1))return true;
+    }
   }
   for(const tok of tokens){
-    if(tok.startsWith("ex:")||tok.startsWith("exif:"))continue;
+    if(tok.startsWith("ex:")||tok.startsWith("exif:")||tok.startsWith("with:"))continue;
     const i=tok.indexOf(":");if(i<0)continue;
     const key=tok.slice(0,i),slot=tok.slice(i+1);
     const m=slot==="全"||(slot==="昼"&&isLunch)||(slot==="夜"&&isDinner);
@@ -970,6 +976,10 @@ function ngHuman(dsl){
     if(tok.startsWith("exif:")){
       const ref=STAFF_MAP[tok.slice(5).trim()];
       return `※${ref?(ref.display||ref.first):tok.slice(5)}がNGの枠はOK`;
+    }
+    if(tok.startsWith("with:")){
+      const ref=STAFF_MAP[tok.slice(5).trim()];
+      return `${ref?(ref.display||ref.first):tok.slice(5)}とセット（${ref?(ref.display||ref.first):tok.slice(5)}がNGの枠はNG）`;
     }
     if(tok.startsWith("ex:"))return `※${tok.slice(3).replace(/^d/,"").split(/[,，]/).join("・")}日はOK`;
     const i=tok.indexOf(":");if(i<0)return tok;
