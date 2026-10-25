@@ -604,6 +604,9 @@ function ingestFile(file){
 
 /* ---------- 描画 ---------- */
 const EKURIYA_LUNCH_TIMES=["10:30","11:15"];
+/* 定休曜日（金曜）で、その日のデータ行が1つも無い日は定休日とみなす。
+   （翌月自動準備が走らなかった月でも「定休日」が出るように。休業解除"off"・トグル・割当のいずれかがあれば行が存在するので対象外） */
+function isImplicitClosed(iso,weekday){ return !DATA.assignments[iso]&&DATA.closedWeekday.includes(weekday); }
 function isOperating(org,weekday,time,iso){
   // 日次の上書き（エクリヤ昼営業）を最優先。無ければ曜日パターンで判定。
     if(iso&&EKURIYA_LUNCH_TIMES.includes(time)&&DATA.assignments[iso]&&DATA.assignments[iso].ekuriyaLunch){
@@ -693,9 +696,9 @@ function renderWeek(week,viewName){
           else{c.classList.add("week__cell--closed");c.textContent=(slotIdx===0&&p===0)?"休業日":"";}
           el.appendChild(c);return;
         }
-        if(a&&a.closed){
+        if((a&&a.closed)||isImplicitClosed(d.iso,d.weekday)){   // データ未登録の定休曜日（金曜）も「定休日」表示
           c.classList.remove(`week__cell--${slot.block}`);
-          if(viewName==="murugi"&&a.marks&&a.marks[slot.time]&&p===0){c.classList.add("week__cell--prep");c.textContent=a.marks[slot.time];}
+          if(viewName==="murugi"&&a&&a.marks&&a.marks[slot.time]&&p===0){c.classList.add("week__cell--prep");c.textContent=a.marks[slot.time];}
           else{c.classList.add("week__cell--closed");c.textContent=(slotIdx===0&&p===0)?(DATA.closedWeekday.includes(d.weekday)?"定休日":"休業日"):"";}
           el.appendChild(c);return;
         }
@@ -1024,8 +1027,9 @@ function openEpop(iso,time,viewName,cellEl){
   });
 
   // 休業日トグル（日単位。追加の休み＝祝日・臨時休業などを設定/解除）
-  const dayClosed=!!(DATA.assignments[iso]&&DATA.assignments[iso].closed);
-  EP_TARGET.wasClosed=dayClosed;
+  const implicitClosed=isImplicitClosed(iso,wd);
+  const dayClosed=!!(DATA.assignments[iso]&&DATA.assignments[iso].closed)||implicitClosed;
+  EP_TARGET.wasClosed=dayClosed; EP_TARGET.implicitClosed=implicitClosed;
   const closedGrp=document.createElement("div");closedGrp.className="epop__grp epop__grp--closed";
   closedGrp.innerHTML='<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1.5px solid '+(dayClosed?'#d33':'#e3e6ea')+';border-radius:10px;background:'+(dayClosed?'rgba(217,51,51,.06)':'#fafbfc')+';cursor:pointer;font-size:13px;">'+
     '<input type="checkbox" id="ep-closed"'+(dayClosed?" checked":"")+' style="width:18px;height:18px;">'+
@@ -1400,7 +1404,10 @@ document.addEventListener("DOMContentLoaded",()=>{
   function navViewYm(){return LIVE.viewingMonth||LIVE.liveMonth;}
   function navButtons(){
     const viewingCurrent=!LIVE.viewingMonth||LIVE.viewingMonth===LIVE.liveMonth;
-    document.getElementById("btn-next-month").style.display=viewingCurrent?"none":"";
+    const nb=document.getElementById("btn-next-month");
+    nb.style.display=viewingCurrent?"none":"";
+    // 「今月に戻る」の矢印は戻る方向に合わせる（翌月以降を表示中=◀ 今月／前月以前を表示中=今月 ▶）
+    if(!viewingCurrent)nb.textContent=(LIVE.viewingMonth>LIVE.liveMonth)?"◀ 今月":"今月 ▶";
     document.getElementById("btn-prev-month").style.display="";
     // 閲覧専用の「翌月」は当月表示中だけ（当月→翌月の1段のみ。編集者は常時）
     document.getElementById("btn-fwd-month").style.display=(LIVE.editor||viewingCurrent)?"":"none";
